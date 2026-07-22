@@ -1229,10 +1229,10 @@ export function ManualQuoteBuilder() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
             
             {/* COLUMNA IZQUIERDA DE FORMULARIOS */}
-            <div className="xl:col-span-8 space-y-6">
+            <div className="lg:col-span-8 space-y-6">
               
               {/* SECCIÓN 1: INFORMACIÓN DEL CLIENTE & PASAJEROS */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-5">
@@ -2222,7 +2222,7 @@ export function ManualQuoteBuilder() {
             </div>
 
             {/* SIDEBAR DERECHA RESUMEN FINANCIERO TOTAL STICKY */}
-            <div className="xl:col-span-4 z-20">
+            <div className="lg:col-span-4 z-20">
               <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-lg sticky top-8 space-y-6">
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <Wallet className="w-4 h-4 text-orange-500" /> Resumen Financiero Total
