@@ -379,22 +379,31 @@ export function ManualQuoteBuilder() {
   const fetchOperators = async () => {
     try {
       const res = await axios.get('/api/operators')
-      setOperators(res.data || [])
-    } catch (e) { console.error('Error loading operators') }
+      setOperators(Array.isArray(res.data) ? res.data : [])
+    } catch (e) {
+      console.error('Error loading operators')
+      setOperators([])
+    }
   }
 
   const fetchAllPassengers = async () => {
     try {
       const res = await axios.get('/api/passengers')
-      setPassengers(res.data || [])
-    } catch (e) { console.error('Error loading passengers') }
+      setPassengers(Array.isArray(res.data) ? res.data : [])
+    } catch (e) {
+      console.error('Error loading passengers')
+      setPassengers([])
+    }
   }
 
   const fetchHistory = async () => {
     try {
       const res = await axios.get('/api/manual-quotes')
-      setHistoryQuotes(res.data || [])
-    } catch (e) { console.error('Error loading history') }
+      setHistoryQuotes(Array.isArray(res.data) ? res.data : [])
+    } catch (e) {
+      console.error('Error loading history')
+      setHistoryQuotes([])
+    }
   }
 
   const handleCreateNewPassenger = async (e: React.FormEvent) => {

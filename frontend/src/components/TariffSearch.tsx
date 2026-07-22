@@ -163,9 +163,10 @@ export function TariffSearch() {
       if (cat) params.categoria = cat
  
       const res = await axios.get('/api/tariffs/search', { params })
-      setCircuits(res.data)
+      setCircuits(Array.isArray(res.data) ? res.data : [])
     } catch (e) {
       console.error(e)
+      setCircuits([])
     } finally {
       setSearching(false)
     }
