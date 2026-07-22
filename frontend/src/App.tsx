@@ -263,7 +263,7 @@ export function App() {
 
         {/* Dynamic Viewport */}
         <main className="flex-1 w-full overflow-y-auto overflow-x-hidden px-4 py-4 md:px-6 md:py-6 lg:px-8 custom-scrollbar">
-          <div className="max-w-screen-2xl mx-auto w-full min-w-0 animate-in fade-in duration-300">
+          <div className="w-full min-w-0 animate-in fade-in duration-300">
             {tab === 'tariffs' && <TariffSearch />}
             {tab === 'manual-quote' && <ManualQuoteBuilder />}
             {tab === 'group-quotes' && <GroupQuoteManager />}
