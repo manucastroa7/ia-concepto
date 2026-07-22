@@ -145,7 +145,7 @@ Responde SOLO con el mensaje de WhatsApp.`;
     return { whatsapp };
   }
 
-  async generateInstagramStoriesPlan(data: ExtractedFlyerData, agencyName: string, agencyPhone: string): Promise<InstagramStoriesPlan> {
+  async extractInstagramStoriesPlan(data: ExtractedFlyerData, agencyName: string, agencyPhone: string): Promise<InstagramStoriesPlan> {
     const prompt = `Analiza este flyer de viajes ya estructurado y generame una estrategia de 3 historias para Instagram en JSON puro, sin markdown ni texto extra.
 
 Datos del flyer:
@@ -199,5 +199,106 @@ Reglas:
         cta: parsed?.story3?.cta || "",
       },
     };
+  }
+
+  async extractPassportData(fileBuffer: Buffer, mimeType: string) {
+    const base64 = fileBuffer.toString("base64");
+    const prompt = `Analiza esta imagen o documento de Pasaporte o DNI/Cédula de identidad. Extrae todos los datos del titular en formato JSON puro, sin texto adicional y sin bloques de código markdown:
+{
+  "name": "Nombres completos del titular (ej: Juan Carlos)",
+  "surname": "Apellidos del titular (ej: Perez Garcia)",
+  "passportNumber": "Numero completo de pasaporte o DNI",
+  "birthDate": "Fecha de nacimiento estrictamente en formato DD/MM/YYYY (ej: 18/03/1955)",
+  "passportExpiration": "Fecha de vencimiento del documento estrictamente en formato DD/MM/YYYY (ej: 12/04/2028)",
+  "nationality": "Nacionalidad o pais emisor (ej: Argentina)"
+}
+Si no se detecta algun campo, ponelo como null. Responde SOLO con el JSON valido.`;
+
+    const raw = await this.callAI(prompt, base64, mimeType);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se pudo procesar la imagen del pasaporte");
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    const normalizeDateStr = (rawDate?: string | null) => {
+      if (!rawDate) return '';
+      let str = rawDate.trim();
+      if (!str) return '';
+      str = str.replace(/([a-zA-Z]+)\/([a-zA-Z]+)/gi, '$1');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split('-');
+        return `${d}/${m}/${y}`;
+      }
+      const numMatch = str.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{2,4})$/);
+      if (numMatch) {
+        const d = numMatch[1].padStart(2, '0');
+        const m = numMatch[2].padStart(2, '0');
+        let y = numMatch[3];
+        if (y.length === 2) y = parseInt(y, 10) > 45 ? `19${y}` : `20${y}`;
+        return `${d}/${m}/${y}`;
+      }
+      const monthsMap: Record<string, string> = {
+        jan: '01', ene: '01', february: '02', feb: '02', marzo: '03', mar: '03',
+        abr: '04', apr: '04', may: '05', jun: '06', jul: '07', ago: '08', aug: '08',
+        sep: '09', oct: '10', nov: '11', dic: '12', dec: '12'
+      };
+      const tokens = str.split(/[\s\.\/-]+/).filter(Boolean);
+      let day = '', month = '', year = '';
+      for (const t of tokens) {
+        const l = t.toLowerCase();
+        if (monthsMap[l]) month = monthsMap[l];
+        else if (/^\d+$/.test(t)) {
+          if (!day && parseInt(t, 10) <= 31) day = t.padStart(2, '0');
+          else if (!year) {
+            year = t;
+            if (year.length === 2) year = parseInt(year, 10) > 45 ? `19${year}` : `20${year}`;
+          }
+        }
+      }
+      if (day && month && year) return `${day}/${month}/${year}`;
+      return rawDate;
+    };
+
+    return {
+      ...parsed,
+      birthDate: normalizeDateStr(parsed.birthDate),
+      passportExpiration: normalizeDateStr(parsed.passportExpiration)
+    };
+  }
+
+  async extractFlightTicketData(fileBuffer: Buffer, mimeType: string) {
+    const base64 = fileBuffer.toString("base64");
+    const prompt = `Analiza esta imagen o captura de reserva de vuelo / e-ticket. Extrae la información aérea en formato JSON puro, sin bloques markdown:
+{
+  "airline": "Nombre de la aerolinea (ej: Iberia, Copa Airlines, LATAM)",
+  "bookingCode": "Codigo PNR o localizador de reserva de 6 caracteres",
+  "type": "ROUND_TRIP" o "ONE_WAY" o "MULTI",
+  "segments": [
+    {
+      "id": "1",
+      "from": "Codigo IATA o ciudad de origen (ej: EZE, Buenos Aires)",
+      "to": "Codigo IATA o ciudad de destino (ej: MAD, Madrid)",
+      "flightNumber": "Numero de vuelo si figura (ej: IB6844)",
+      "departureDate": "Fecha de salida DD/MM/YYYY",
+      "departureTime": "Hora de salida HH:MM",
+      "arrivalDate": "Fecha de llegada DD/MM/YYYY",
+      "arrivalTime": "Hora de llegada HH:MM",
+      "stops": "Directo" o "1 Escala"
+    }
+  ],
+  "baggage": {
+    "hasHand": true/false,
+    "handDesc": "Mochila o bolso de mano",
+    "hasCarryOn": true/false,
+    "carryOnDesc": "Equipaje de mano 10kg",
+    "hasChecked": true/false,
+    "checkedDesc": "Equipaje en bodega 23kg"
+  }
+}
+Si algun dato no esta presente, utiliza valores por defecto razonables. Responde SOLO con el JSON valido.`;
+
+    const raw = await this.callAI(prompt, base64, mimeType);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se pudo extraer la reserva aérea");
+    return JSON.parse(jsonMatch[0]);
   }
 }

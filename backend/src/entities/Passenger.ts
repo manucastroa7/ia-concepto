@@ -18,6 +18,18 @@ export class Passenger {
     @Column({ nullable: true })
     whatsapp!: string;
 
+    @Column({ nullable: true })
+    passportNumber!: string;
+
+    @Column({ nullable: true })
+    birthDate!: string;
+
+    @Column({ nullable: true })
+    passportExpiration!: string;
+
+    @Column({ nullable: true })
+    nationality!: string;
+
     @Column("text", { nullable: true })
     notes!: string;
 

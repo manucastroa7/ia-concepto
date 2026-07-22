@@ -11,6 +11,9 @@ import { Sale } from "./entities/Sale";
 import { Operator } from "./entities/Operator";
 import { Passenger } from "./entities/Passenger";
 import { WebPackage } from "./entities/WebPackage";
+import { GroupQuote } from "./entities/GroupQuote";
+import { TreasuryAccount } from "./entities/TreasuryAccount";
+import { TreasuryTransaction } from "./entities/TreasuryTransaction";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -24,7 +27,7 @@ export const AppDataSource = new DataSource({
     database: process.env.DB_NAME || "travel_agency",
     synchronize: true,
     logging: false,
-    entities: [Quote, FlyerDoc, Circuit, GroupDeparture, DestinationAsset, AgencySettings, ManualQuote, Sale, Operator, Passenger, WebPackage],
+    entities: [Quote, FlyerDoc, Circuit, GroupDeparture, DestinationAsset, AgencySettings, ManualQuote, Sale, Operator, Passenger, WebPackage, GroupQuote, TreasuryAccount, TreasuryTransaction],
     migrations: ["src/migrations/**/*.ts"],
     subscribers: [],
 });

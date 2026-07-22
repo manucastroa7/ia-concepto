@@ -181,4 +181,17 @@ export class ManualQuoteController {
             return res.status(500).json({ message: "Error al generar texto" });
         }
     }
+
+    static async parseFlightTicket(req: Request, res: Response) {
+        try {
+            if (!req.file) return res.status(400).json({ message: "No se subió archivo o imagen" });
+            const { GeminiVisionService } = require("../services/GeminiVisionService");
+            const vision = new GeminiVisionService();
+            const result = await vision.extractFlightTicketData(req.file.buffer, req.file.mimetype);
+            return res.json(result);
+        } catch (error: any) {
+            console.error("Error parsing flight ticket:", error);
+            return res.status(500).json({ message: error.message || "Error al procesar la reserva aérea" });
+        }
+    }
 }
