@@ -78,6 +78,7 @@ app.get("/api/manual-quotes", ManualQuoteController.list);
 app.get("/api/manual-quotes/:id", ManualQuoteController.get);
 app.post("/api/manual-quotes", ManualQuoteController.create);
 app.patch("/api/manual-quotes/:id", ManualQuoteController.update);
+app.delete("/api/manual-quotes/:id", ManualQuoteController.remove);
 app.post("/api/manual-quotes/generate-whatsapp", ManualQuoteController.generateWhatsAppText);
 app.post("/api/manual-quotes/parse-flight-ticket", upload.single("file"), ManualQuoteController.parseFlightTicket);
 app.post("/api/manual-quotes/parse-service-voucher", upload.single("file"), ManualQuoteController.parseServiceVoucher);

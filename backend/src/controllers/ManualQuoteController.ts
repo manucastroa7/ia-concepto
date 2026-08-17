@@ -209,4 +209,18 @@ export class ManualQuoteController {
             return res.status(500).json({ message: error.message || "Error al procesar el comprobante" });
         }
     }
+
+    static async remove(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const repo = AppDataSource.getRepository(ManualQuote);
+            const quote = await repo.findOneBy({ id });
+            if (!quote) return res.status(404).json({ message: "Cotización no encontrada" });
+            await repo.remove(quote);
+            return res.json({ message: "Cotización eliminada exitosamente" });
+        } catch (error) {
+            console.error("Error deleting quote:", error);
+            return res.status(500).json({ message: "Error al eliminar la cotización" });
+        }
+    }
 }

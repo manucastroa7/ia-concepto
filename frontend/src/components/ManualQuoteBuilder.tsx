@@ -3,7 +3,8 @@ import {
     Plus, Trash2, Plane, Hotel, Users, ShieldCheck, Send, Save, History, Search, 
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
-    Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw
+    Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
+    AlertTriangle, CalendarDays
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -381,7 +382,11 @@ interface QuoteState {
 }
 
 export function ManualQuoteBuilder() {
-  const [viewMode, setViewMode] = useState<'builder' | 'list'>('builder')
+  const [viewMode, setViewMode] = useState<'builder' | 'list' | 'calendar'>('list')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
+  const [quoteToDelete, setQuoteToDelete] = useState<any | null>(null)
+
   const [quote, setQuote] = useState<QuoteState>({
     passengerId: '',
     clientName: '',
@@ -528,6 +533,79 @@ export function ManualQuoteBuilder() {
       setHistoryQuotes([])
     }
   }
+
+  const handleDeleteQuote = async (quoteId: string) => {
+    try {
+      await axios.delete(`/api/manual-quotes/${quoteId}`)
+      toast.success('Cotización eliminada exitosamente')
+      fetchHistory()
+      setQuoteToDelete(null)
+      if (quote.id === quoteId) {
+        resetQuote()
+      }
+    } catch (e) {
+      toast.error('Error al eliminar la cotización')
+    }
+  }
+
+  // Notificación de Salidas Próximas (7 días de anticipación)
+  const upcoming7DayDepartures = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const in7Days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+    in7Days.setHours(23, 59, 59, 999)
+
+    return historyQuotes.filter(q => {
+      if (!q.startDate) return false
+      const sDate = new Date(q.startDate + 'T00:00:00')
+      if (isNaN(sDate.getTime())) return false
+      return sDate >= today && sDate <= in7Days
+    })
+  }, [historyQuotes])
+
+  // Filtrado de Cotizaciones Maestro
+  const filteredHistoryQuotes = useMemo(() => {
+    return historyQuotes.filter(q => {
+      if (statusFilter !== 'all' && q.status !== statusFilter) return false
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim()
+        const client = (q.passenger ? `${q.passenger.surname} ${q.passenger.name}` : (q.clientName || '')).toLowerCase()
+        const title = (q.title || '').toLowerCase()
+        const dest = (q.destination || '').toLowerCase()
+        return client.includes(query) || title.includes(query) || dest.includes(query)
+      }
+      return true
+    })
+  }, [historyQuotes, statusFilter, searchQuery])
+
+  // Cálculo de KPIs Ejecutivos del Listado
+  const listKpis = useMemo(() => {
+    let totalSaleSum = 0
+    let reservedCount = 0
+    let soldCount = 0
+    let draftCount = 0
+
+    historyQuotes.forEach(q => {
+      let itemsList = q.items || []
+      if (typeof itemsList === 'string') {
+        try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
+      }
+      let sale = Number(q.soldPriceCollected) || 0
+      if (sale === 0 && itemsList.length > 0) {
+        itemsList.forEach((it: any) => {
+          const eco = calculateItemEconomics(it)
+          sale += eco.totalSale
+        })
+      }
+      totalSaleSum += sale
+
+      if (q.status === 'reserved') reservedCount++
+      else if (q.status === 'sold') soldCount++
+      else if (q.status === 'draft') draftCount++
+    })
+
+    return { totalSaleSum, reservedCount, soldCount, draftCount, totalCount: historyQuotes.length }
+  }, [historyQuotes])
 
   const handleCreateNewPassenger = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1418,8 +1496,8 @@ export function ManualQuoteBuilder() {
 
   return (
     <div className="space-y-8 max-w-full overflow-x-hidden">
-      {/* SWITCH DE VISTA: HISTORIAL VS NUEVA / EDITANDO */}
-      <div className="flex justify-between items-center">
+      {/* SWITCH DE VISTA: HISTORIAL VS CALENDARIO VS COTIZADOR MAESTRO */}
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
           <button
             onClick={() => setViewMode('list')}
@@ -1427,8 +1505,21 @@ export function ManualQuoteBuilder() {
               viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            <History className="w-4 h-4" /> Listado de Cotizaciones ({historyQuotes.length})
+            <History className="w-4 h-4" /> Listado Maestro ({historyQuotes.length})
           </button>
+
+          <button
+            onClick={() => setViewMode('calendar')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 relative ${
+              viewMode === 'calendar' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-700'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4 text-orange-500" /> Calendario de Salidas
+            {upcoming7DayDepartures.length > 0 && (
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse absolute top-2 right-2 border-2 border-white" />
+            )}
+          </button>
+
           <button
             onClick={() => setViewMode('builder')}
             className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
@@ -1440,12 +1531,13 @@ export function ManualQuoteBuilder() {
         </div>
       </div>
 
-      {viewMode === 'list' ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+      {/* VISTA 1: LISTADO MAESTRO DE COTIZACIONES */}
+      {viewMode === 'list' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
             <div>
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Listado de Cotizaciones Maestro</h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Hacé clic en cualquier cotización para editarla o en <strong>Ficha</strong> para ver el historial y cobros del pasajero.</p>
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Listado Maestro de Cotizaciones</h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Control centralizado de itinerarios, reservas y seguimiento comercial</p>
             </div>
             <button
               onClick={resetQuote}
@@ -1455,9 +1547,106 @@ export function ManualQuoteBuilder() {
             </button>
           </div>
 
-          {historyQuotes.length > 0 ? (
+          {/* DASHBOARD KPIS SUPERIORES */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Cotizaciones</p>
+                <p className="text-xl font-black mt-0.5">{listKpis.totalCount}</p>
+                <p className="text-[10.5px] text-orange-400 font-bold mt-1">USD ${fmtVal(listKpis.totalSaleSum)}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-orange-400">
+                <FileText className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reservas Confirmadas</p>
+                <p className="text-xl font-black text-purple-600 mt-0.5">{listKpis.reservedCount}</p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1">En proceso de seña / pago</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 font-black">
+                <Briefcase className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Viajes Vendidos</p>
+                <p className="text-xl font-black text-emerald-600 mt-0.5">{listKpis.soldCount}</p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1">Operaciones cerradas</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-black">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between transition-all ${
+              upcoming7DayDepartures.length > 0 ? 'bg-amber-50/80 border-amber-300' : 'bg-white border-slate-200/80'
+            }`}>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Salidas en 7 Días
+                </p>
+                <p className="text-xl font-black text-amber-900 mt-0.5">{upcoming7DayDepartures.length}</p>
+                <p className="text-[10px] text-amber-700 font-bold mt-1">Reconfirmación requerida</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* BARRA DE BÚSQUEDA Y FILTROS TIPO PÍLDORA */}
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Buscar por nombre de cliente, apellido o destino..."
+                className="w-full bg-white border border-slate-200 pl-10 pr-4 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 transition-all"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[
+                { id: 'all', label: 'Todos' },
+                { id: 'draft', label: '📄 Borradores' },
+                { id: 'reserved', label: '🟣 Reservas' },
+                { id: 'sold', label: '🟢 Vendidos' },
+                { id: 'follow_up', label: '⏳ Seguimiento' },
+                { id: 'lost', label: '🔴 Perdidos' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setStatusFilter(f.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    statusFilter === f.id
+                      ? 'bg-slate-900 text-white shadow-2xs font-black'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* GRILLA DE TARJETAS (CARDS REDISEÑADAS PREMIUM UX) */}
+          {filteredHistoryQuotes.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {historyQuotes.map(q => {
+              {filteredHistoryQuotes.map(q => {
                 let itemsList: any[] = q.items || []
                 if (typeof itemsList === 'string') {
                   try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
@@ -1471,65 +1660,102 @@ export function ManualQuoteBuilder() {
                 }
 
                 const ST_CFG: any = {
-                  draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600' },
-                  sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-700' },
-                  follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-700' },
-                  reserved: { label: 'Reserva', cls: 'bg-purple-100 text-purple-700' },
-                  sold: { label: 'Vendido', cls: 'bg-emerald-100 text-emerald-700' },
-                  lost: { label: 'Perdido', cls: 'bg-red-100 text-red-700' }
+                  draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+                  sent: { label: 'Enviada', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+                  follow_up: { label: 'Seguimiento', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+                  reserved: { label: 'Reserva', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
+                  sold: { label: 'Vendido', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                  lost: { label: 'Perdido', cls: 'bg-rose-50 text-rose-700 border-rose-200' }
                 }
                 const st = ST_CFG[q.status] || ST_CFG.draft
+                const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero Titular')
+                const initials = clientName.split(',').map((n: string) => n.trim()[0]).filter(Boolean).join('').slice(0, 2) || 'CL'
 
                 return (
                   <div 
                     key={q.id} 
-                    className="p-5 rounded-2xl border border-slate-200/80 hover:border-orange-300 transition-all hover:shadow-md bg-white flex flex-col justify-between space-y-4"
+                    className="p-5 rounded-3xl border border-slate-200/90 hover:border-orange-300 transition-all hover:shadow-lg bg-white flex flex-col justify-between space-y-4 group relative"
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.passenger?.surname ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')}</span>
-                        <span className={`text-[9.5px] font-black uppercase px-2.5 py-0.5 rounded-md ${st.cls}`}>{st.label}</span>
+                      {/* HEADER CON AVATAR Y BADGE */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
+                            {initials}
+                          </div>
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-tight truncate">
+                            {clientName}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-xl border shrink-0 ${st.cls}`}>
+                          {st.label}
+                        </span>
                       </div>
 
-                      <h3 className="font-black text-slate-900 text-base group-hover:text-orange-600 transition-colors uppercase tracking-tight">
+                      {/* TÍTULO Y DESTINO */}
+                      <h3 className="font-black text-slate-900 text-sm group-hover:text-orange-600 transition-colors uppercase tracking-tight leading-snug">
                         {q.title || 'Cotización de Viaje'}
                       </h3>
 
-                      <p className="text-xs text-slate-500 font-semibold mt-1">
-                        Destino: <strong className="text-slate-800">{q.destination || 'Por definir'}</strong>
-                      </p>
+                      <div className="space-y-1 mt-2">
+                        <p className="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                          <span className="truncate">{q.destination || 'Sin destino especificado'}</span>
+                        </p>
+                        {q.startDate && (
+                          <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>{fmtDate(q.startDate)} {q.endDate ? `al ${fmtDate(q.endDate)}` : ''}</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const pIdToOpen = q.passengerId || q.passenger?.id;
-                          if (pIdToOpen) {
-                            setSelectedPassengerProfileId(pIdToOpen);
-                          } else if (passengers.length > 0) {
-                            setSelectedPassengerProfileId(passengers[0].id);
-                          } else {
-                            toast.error('No hay registro de pasajeros');
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-orange-50 hover:bg-orange-500 hover:text-white text-orange-600 font-black text-[11px] uppercase rounded-xl border border-orange-200 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
-                        title="Ver Ficha Completa del Pasajero, Servicios y Pagos"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Ficha
-                      </button>
-
-                      <div className="text-right">
-                        <p className="text-[9.5px] font-bold text-slate-400 uppercase">Total Cotizado</p>
+                    {/* FOOTER CON PRECIO Y ACCIONES */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Cotizado</p>
                         <p className="font-black text-orange-600 text-base leading-tight">{q.currency || 'USD'} ${fmtVal(totalSale)}</p>
                       </div>
 
-                      <button 
-                        onClick={() => handleLoadQuote(q)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl transition-all cursor-pointer"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const pIdToOpen = q.passengerId || q.passenger?.id
+                            if (pIdToOpen) {
+                              setSelectedPassengerProfileId(pIdToOpen)
+                            } else if (passengers.length > 0) {
+                              setSelectedPassengerProfileId(passengers[0].id)
+                            } else {
+                              toast.error('No hay registro de pasajeros')
+                            }
+                          }}
+                          className="p-2 bg-orange-50 hover:bg-orange-500 hover:text-white text-orange-600 rounded-xl border border-orange-200 transition-all cursor-pointer shadow-xs"
+                          title="Ver Ficha Pasajero"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+
+                        <button 
+                          onClick={() => handleLoadQuote(q)}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase rounded-xl transition-all cursor-pointer shadow-xs"
+                          title="Editar Cotización"
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setQuoteToDelete(q)
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-200 transition-all cursor-pointer"
+                          title="Eliminar Cotización"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )
@@ -1538,14 +1764,133 @@ export function ManualQuoteBuilder() {
           ) : (
             <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl p-8">
               <History className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Sin cotizaciones registradas</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">Creá una nueva cotización para comenzar a cargar itinerarios aéreos, hoteles y trenes.</p>
+              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Sin cotizaciones encontradas</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">No hay resultados que coincidan con la búsqueda o el filtro seleccionado.</p>
             </div>
           )}
         </div>
-      ) : (
-        /* COTIZADOR MAESTRO FORMULARIO */
-        <div className="space-y-8">
+      )}
+
+      {/* VISTA 2: CALENDARIO DE SALIDAS & NOTIFICACIONES A 7 DÍAS */}
+      {viewMode === 'calendar' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center">
+                <CalendarDays className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Calendario de Salidas & Reconfirmaciones</h2>
+                <p className="text-xs text-slate-500 font-medium">Control de viajes próximos y reconfirmación de servicios a 7 días de la salida</p>
+              </div>
+            </div>
+          </div>
+
+          {/* BANNER NOTIFICACIÓN DE SALIDAS EN 7 DÍAS */}
+          {upcoming7DayDepartures.length > 0 ? (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center animate-pulse">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase text-amber-900 tracking-wider">
+                      ⚠️ Alerta de Reconfirmación: {upcoming7DayDepartures.length} Salida(s) en los Próximos 7 Días
+                    </h4>
+                    <p className="text-xs text-amber-800 font-medium">
+                      Revisar emisión de vouchers y reconfirmar servicios de aéreos, hoteles y traslados con los proveedores.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {upcoming7DayDepartures.map(q => {
+                  const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')
+                  return (
+                    <div key={q.id} className="p-3.5 bg-white rounded-2xl border border-amber-200 shadow-2xs space-y-2">
+                      <div className="flex justify-between items-start">
+                        <span className="text-xs font-black text-slate-900 uppercase">{clientName}</span>
+                        <span className="text-[10px] font-black uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
+                          📅 {fmtDate(q.startDate)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 font-semibold truncate">📍 {q.destination || 'Por definir'}</p>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => handleLoadQuote(q)}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black uppercase rounded-xl transition-all cursor-pointer shadow-xs"
+                        >
+                          Ver Reserva
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3 text-emerald-800 text-xs font-bold">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span>No hay salidas programadas para los próximos 7 días. Todos los itinerarios se encuentran al día.</span>
+            </div>
+          )}
+
+          {/* CRONOGRAMA DE VIAJES / CALENDARIO LISTING */}
+          <div className="space-y-4 pt-2">
+            <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Línea de Tiempo de Salidas Programadas</h3>
+
+            {historyQuotes.filter(q => q.startDate).length === 0 ? (
+              <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl">
+                <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-bold text-slate-500">Sin fechas de salida asignadas a las cotizaciones aún.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {historyQuotes
+                  .filter(q => q.startDate)
+                  .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+                  .map(q => {
+                    const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')
+                    const isUpcoming7 = upcoming7DayDepartures.some(u => u.id === q.id)
+                    return (
+                      <div 
+                        key={q.id} 
+                        className={`p-4 rounded-2xl border transition-all space-y-3 bg-white ${
+                          isUpcoming7 ? 'border-amber-400 shadow-md ring-2 ring-amber-400/20' : 'border-slate-200/80 hover:border-orange-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="text-xs font-black text-slate-900 uppercase truncate">{clientName}</span>
+                          <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
+                            📅 {fmtDate(q.startDate)}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-800">{q.title || 'Cotización de Viaje'}</p>
+                        <p className="text-xs text-slate-500 font-semibold flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-orange-500" /> {q.destination || 'Por definir'}
+                        </p>
+                        <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
+                          <span className="text-xs font-black text-orange-600">{q.currency || 'USD'} ${fmtVal(Number(q.soldPriceCollected) || 0)}</span>
+                          <button
+                            onClick={() => handleLoadQuote(q)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs uppercase rounded-xl transition-all cursor-pointer"
+                          >
+                            Abrir
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VISTA 3: FORMULARIO COTIZADOR MAESTRO */}
+      {viewMode === 'builder' && (
           
           {/* HEADER DEL COTIZADOR */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -3568,6 +3913,55 @@ export function ManualQuoteBuilder() {
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer"
               >
                 Sí, Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      {/* MODAL CONFIRMACIÓN ELIMINAR COTIZACIÓN COMPLETA */}
+      {quoteToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-600" /> Eliminar Cotización
+              </h3>
+              <button onClick={() => setQuoteToDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 font-medium">
+                ¿Estás seguro de que deseas eliminar esta cotización? Esta acción la borrará permanentemente de la base de datos.
+              </p>
+
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {quoteToDelete.title || 'Cotización de Viaje'}
+                </p>
+                <p className="text-xs text-slate-600 font-semibold">
+                  Pasajero: {quoteToDelete.passenger ? `${quoteToDelete.passenger.surname}, ${quoteToDelete.passenger.name}` : (quoteToDelete.clientName || 'Sin Pasajero')}
+                </p>
+                <p className="text-xs text-slate-500 font-medium">
+                  Destino: {quoteToDelete.destination || 'Por definir'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setQuoteToDelete(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteQuote(quoteToDelete.id)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
               </button>
             </div>
           </div>
