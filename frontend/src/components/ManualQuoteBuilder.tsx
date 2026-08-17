@@ -4221,24 +4221,141 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   {quote.items.length === 0 ? (
                     <p className="text-xs text-slate-400 italic">No hay servicios añadidos a la cotización aún.</p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {quote.items.map((item, idx) => {
                         const eco = calculateItemEconomics(item)
-                        const itemTitle = item.title || item.details?.hotelName || item.details?.airline || item.details?.route || item.details?.serviceName || `${item.type.toUpperCase()} de Viaje`
-                        const itemDesc = item.description || (item.details?.route ? `Ruta: ${item.details.route}` : (item.details?.hotelName ? `Hotel en ${item.details.city || 'Destino'}` : ''))
+                        const d = item.details || {}
+                        const itemTitle = item.title || d.hotelName || d.airline || d.route || d.serviceName || `${item.type.toUpperCase()} de Viaje`
+
                         return (
-                          <div key={item.id} className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 text-xs flex justify-between items-center gap-4">
-                            <div className="space-y-0.5 flex-1">
+                          <div key={item.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/90 text-xs space-y-2">
+                            <div className="flex justify-between items-center gap-4">
                               <div className="flex items-center gap-2">
-                                <span className="font-black text-indigo-600 uppercase text-[11px]">{idx + 1}. [{item.type}]</span>
-                                <span className="font-black text-slate-900 uppercase">{itemTitle}</span>
+                                <span className="font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 uppercase text-[11px]">
+                                  {idx + 1}. [{item.type}]
+                                </span>
+                                <span className="font-black text-slate-900 uppercase text-xs">{itemTitle}</span>
                               </div>
-                              {itemDesc && <p className="text-slate-600 font-medium text-[11px]">{itemDesc}</p>}
+
+                              {exportMode === 'detailed' && (
+                                <div className="text-right shrink-0">
+                                  <span className="font-black text-slate-900 text-sm">{quote.currency} ${fmtVal(eco.totalSale)}</span>
+                                </div>
+                              )}
                             </div>
 
-                            {exportMode === 'detailed' && (
-                              <div className="text-right shrink-0">
-                                <span className="font-black text-slate-900 text-sm">{quote.currency} ${fmtVal(eco.totalSale)}</span>
+                            {/* DESGLOSE INFORMATIVO DETALLADO DEL SERVICIO */}
+                            {/* AÉREO */}
+                            {item.type === 'flight' && (
+                              <div className="space-y-2 pt-1">
+                                {d.segments && d.segments.length > 0 && (
+                                  <div className="space-y-1.5 bg-white p-3 rounded-xl border border-slate-200/80">
+                                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Itinerario de Vuelos ({d.segments.length} tramo{d.segments.length > 1 ? 's' : ''}):</p>
+                                    {d.segments.map((seg: any, sIdx: number) => (
+                                      <div key={seg.id || sIdx} className="flex flex-wrap items-center justify-between text-[11px] border-b border-slate-100 last:border-0 pb-1 last:pb-0 gap-2">
+                                        <span className="font-bold text-slate-800 flex items-center gap-1">
+                                          ✈️ {seg.from || 'Origen'} ➔ {seg.to || 'Destino'}
+                                          {seg.flightNumber && <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono">Vuelo: {seg.flightNumber}</span>}
+                                        </span>
+                                        <span className="text-slate-600 font-medium">
+                                          {seg.departureDate ? `Salida: ${fmtDate(seg.departureDate)} ${seg.departureTime || ''}` : ''}
+                                          {seg.arrivalDate ? ` | Llegada: ${fmtDate(seg.arrivalDate)} ${seg.arrivalTime || ''}` : ''}
+                                          {seg.stops && ` (${seg.stops})`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {d.baggage && (
+                                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 bg-slate-100/70 px-3 py-1.5 rounded-lg border border-slate-200/60">
+                                    <span className="font-bold text-slate-700 text-[10px] uppercase">Equipaje:</span>
+                                    <span>{d.baggage.hasHand ? `🎒 Mano: ${d.baggage.handDesc || 'Incluido'}` : '🎒 Mano: No'}</span>
+                                    <span>{d.baggage.hasCarryOn ? `🧳 Carry-on: ${d.baggage.carryOnDesc || 'Incluido'}` : '🧳 Carry-on: No'}</span>
+                                    <span>{d.baggage.hasChecked ? `🧳 Bodega: ${d.baggage.checkedDesc || 'Incluida'}` : '🧳 Bodega: No'}</span>
+                                  </div>
+                                )}
+
+                                {d.bookingCode && (
+                                  <p className="text-[10.5px] font-semibold text-slate-500">Código de Reserva / GDS: <strong className="font-mono text-slate-800">{d.bookingCode}</strong></p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* HOTEL */}
+                            {item.type === 'hotel' && (
+                              <div className="space-y-2 pt-1">
+                                <div className="flex flex-wrap items-center gap-3 text-[11.5px] text-slate-700 font-medium">
+                                  {d.checkIn && d.checkOut && (
+                                    <span>📅 Entrada: <strong>{fmtDate(d.checkIn)}</strong> ➔ Salida: <strong>{fmtDate(d.checkOut)}</strong></span>
+                                  )}
+                                  {d.cancellationDate && (
+                                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10.5px] font-bold">
+                                      Cancelación sin gasto hasta: {fmtDate(d.cancellationDate)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {d.rooms && d.rooms.length > 0 && (
+                                  <div className="space-y-1 bg-white p-3 rounded-xl border border-slate-200/80">
+                                    <p className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Habitaciones / Alojamiento:</p>
+                                    {d.rooms.map((rm: any, rIdx: number) => (
+                                      <div key={rm.id || rIdx} className="flex justify-between text-[11px] text-slate-700 border-b border-slate-100 last:border-0 pb-1 last:pb-0">
+                                        <span>🏨 Hab. {rIdx + 1}: <strong>{rm.type || 'Standard'}</strong></span>
+                                        <span>Régimen: <strong>{rm.board || 'Solo Habitación'}</strong> ({rm.paxCount || 1} pax)</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {d.confirmationNumber && (
+                                  <p className="text-[10.5px] font-semibold text-slate-500">Confirmación Hotelera: <strong className="font-mono text-slate-800">{d.confirmationNumber}</strong></p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* TREN */}
+                            {item.type === 'train' && (
+                              <div className="space-y-1.5 pt-1 text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200/80">
+                                <div className="flex flex-wrap items-center justify-between text-[11.5px]">
+                                  <span className="font-bold text-slate-900">🚆 Tramo: {d.origin || 'Origen'} ➔ {d.destination || 'Destino'}</span>
+                                  {d.trainNumber && <span className="font-mono text-[10.5px] bg-slate-100 px-1.5 py-0.5 rounded">Tren Nº: {d.trainNumber}</span>}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 mt-1">
+                                  {d.departureDate && <span>Salida: {fmtDate(d.departureDate)} {d.departureTime || ''}</span>}
+                                  {d.arrivalDate && <span>Llegada: {fmtDate(d.arrivalDate)} {d.arrivalTime || ''}</span>}
+                                  {d.classType && <span>Clase: <strong>{d.classType}</strong></span>}
+                                  {d.seatDetails && <span>Asiento: <strong>{d.seatDetails}</strong></span>}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TRASLADO */}
+                            {item.type === 'transfer' && (
+                              <div className="space-y-1.5 pt-1 text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200/80">
+                                <p className="font-bold text-slate-900 text-[11.5px]">🚐 Traslado: {d.origin || 'Origen'} ➔ {d.destination || 'Destino'}</p>
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+                                  <span>Modalidad: <strong>{d.isRoundTrip ? 'Ida y Vuelta (Round Trip)' : 'Solo Ida (One Way)'}</strong></span>
+                                  {d.date && <span>Fecha: <strong>{fmtDate(d.date)}</strong> {d.time || ''}</span>}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ASISTENCIA */}
+                            {item.type === 'assistance' && (
+                              <div className="space-y-1.5 pt-1 text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200/80">
+                                <p className="font-bold text-slate-900 text-[11.5px]">🛡️ Cobertura Médica de Viaje</p>
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+                                  {d.startDate && d.endDate && <span>Vigencia: <strong>{fmtDate(d.startDate)}</strong> al <strong>{fmtDate(d.endDate)}</strong></span>}
+                                  {d.coverage && <span>Monto Máximo Cobertura: <strong>{d.coverage}</strong></span>}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* DESCRIPCIÓN GENERAL DE OTROS SERVICIOS / EXCURSIONES */}
+                            {(item.description || d.description) && (
+                              <div className="pt-1 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70">
+                                <p className="font-medium text-[11px]">{item.description || d.description}</p>
                               </div>
                             )}
                           </div>
@@ -4312,15 +4429,33 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   txt += `*ITINERARIO DE SERVICIOS:*\n`
                   quote.items.forEach((it, i) => {
                     const eco = calculateItemEconomics(it)
-                    const title = it.title || it.details?.hotelName || it.details?.airline || it.details?.route || `${it.type.toUpperCase()} de Viaje`
-                    txt += `${i+1}. [${it.type.toUpperCase()}] ${title}`
-                    if (exportMode === 'detailed') txt += ` - ${quote.currency} $${fmtVal(eco.totalSale)}`
+                    const d = it.details || {}
+                    const title = it.title || d.hotelName || d.airline || d.route || `${it.type.toUpperCase()} de Viaje`
+                    txt += `${i+1}. [${it.type.toUpperCase()}] ${title}\n`
+
+                    // Informational breakdown for WhatsApp
+                    if (it.type === 'flight' && d.segments) {
+                      d.segments.forEach((s: any) => {
+                        txt += `   ✈️ ${s.from || ''} -> ${s.to || ''} | ${s.departureDate ? fmtDate(s.departureDate) : ''} ${s.departureTime || ''}\n`
+                      })
+                    } else if (it.type === 'hotel') {
+                      if (d.checkIn && d.checkOut) txt += `   🏨 Check-in: ${fmtDate(d.checkIn)} -> Check-out: ${fmtDate(d.checkOut)}\n`
+                      if (d.rooms) d.rooms.forEach((r: any) => txt += `   • Habitación: ${r.type || 'Standard'} (${r.board || 'Solo hab'})\n`)
+                    } else if (it.type === 'train') {
+                      txt += `   🚆 ${d.origin || ''} -> ${d.destination || ''} | ${d.departureDate ? fmtDate(d.departureDate) : ''}\n`
+                    } else if (it.type === 'transfer') {
+                      txt += `   🚐 ${d.origin || ''} -> ${d.destination || ''} | ${d.date ? fmtDate(d.date) : ''}\n`
+                    } else if (it.type === 'assistance') {
+                      if (d.startDate && d.endDate) txt += `   🛡️ Vigencia: ${fmtDate(d.startDate)} al ${fmtDate(d.endDate)}\n`
+                    }
+
+                    if (exportMode === 'detailed') txt += `   Precio: ${quote.currency} $${fmtVal(eco.totalSale)}\n`
                     txt += `\n`
                   })
-                  txt += `\n*TOTAL DEL PAQUETE:* ${quote.currency} $${fmtVal(totals.totalSale)}\n\n`
+                  txt += `*TOTAL DEL PAQUETE:* ${quote.currency} $${fmtVal(totals.totalSale)}\n\n`
                   txt += `_Nota: Tarifas y servicios sujetos a disponibilidad al momento de confirmar la reserva y a cambios de tarifa sin previo aviso._`
                   navigator.clipboard.writeText(txt)
-                  toast.success('Resumen de cotización copiado para WhatsApp')
+                  toast.success('Resumen informativo de cotización copiado para WhatsApp')
                 }}
                 className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
               >
