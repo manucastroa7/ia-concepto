@@ -4118,7 +4118,16 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               <button
                 type="button"
                 onClick={() => handleDeleteQuote(quoteToDelete.id)}
-                className="px-5       {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
       {showExportModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
           <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
@@ -4319,13 +4328,6 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               </button>
             </div>
 
-          </div>
-        </div>
-      )}Name="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
-              >
-                <Share2 className="w-4 h-4" /> Copiar para WhatsApp
-              </button>
-            </div>
           </div>
         </div>
       )}
