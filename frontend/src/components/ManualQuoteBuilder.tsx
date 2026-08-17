@@ -363,6 +363,8 @@ interface Payment {
 interface QuoteState {
   id?: string
   passengerId: string
+  passenger?: any
+  clientName?: string
   title: string
   destination: string
   paxCount: number
@@ -382,6 +384,7 @@ export function ManualQuoteBuilder() {
   const [viewMode, setViewMode] = useState<'builder' | 'list'>('builder')
   const [quote, setQuote] = useState<QuoteState>({
     passengerId: '',
+    clientName: '',
     title: '',
     destination: '',
     paxCount: 1,
@@ -1130,8 +1133,14 @@ export function ManualQuoteBuilder() {
   }
 
   const selectPassenger = (passenger: any) => {
-    setQuote(prev => ({ ...prev, passengerId: passenger.id }))
-    setPassengerSearch(`${passenger.surname}, ${passenger.name}`)
+    const fullName = `${passenger.surname}, ${passenger.name}`
+    setQuote(prev => ({ 
+      ...prev, 
+      passengerId: passenger.id, 
+      passenger,
+      clientName: fullName
+    }))
+    setPassengerSearch(fullName)
     setShowPassengerDropdown(false)
     toast.success(`Cliente seleccionado: ${passenger.name} ${passenger.surname}`)
   }
@@ -1352,6 +1361,7 @@ export function ManualQuoteBuilder() {
     localStorage.removeItem('manual_quote_draft')
     setQuote({
       passengerId: '',
+      clientName: '',
       title: '',
       destination: '',
       paxCount: 1,
@@ -1379,6 +1389,8 @@ export function ManualQuoteBuilder() {
     setQuote({
       id: q.id,
       passengerId: q.passengerId || q.passenger?.id || '',
+      passenger: q.passenger,
+      clientName: q.clientName || (q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : ''),
       title: q.title || '',
       destination: q.destination || '',
       paxCount: Number(q.paxCount) || 1,
@@ -1670,8 +1682,10 @@ export function ManualQuoteBuilder() {
                       <input
                         value={passengerSearch}
                         onChange={e => {
-                          setPassengerSearch(e.target.value);
-                          searchPassengers(e.target.value);
+                          const val = e.target.value;
+                          setPassengerSearch(val);
+                          setQuote(prev => ({ ...prev, clientName: val }));
+                          searchPassengers(val);
                         }}
                         onFocus={() => passengerResults.length > 0 && setShowPassengerDropdown(true)}
                         placeholder="Buscar cliente por DNI, Nombre o Apellido..."

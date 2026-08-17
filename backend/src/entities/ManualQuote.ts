@@ -33,6 +33,30 @@ export class ManualQuote {
     @Column("text", { nullable: true })
     notes!: string;
 
+    @Column({ nullable: true })
+    clientName!: string;
+
+    @Column({ nullable: true })
+    startDate!: string;
+
+    @Column({ nullable: true })
+    endDate!: string;
+
+    @Column({ default: 1 })
+    paxCount!: number;
+
+    @Column("jsonb", { default: [] })
+    additionalPassengers!: string[];
+
+    @Column("jsonb", { default: [] })
+    payments!: any[];
+
+    @Column("jsonb", { default: [] })
+    providerPayments!: any[];
+
+    @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+    globalAdjustment!: number;
+
     @Column({ default: "draft" })
     status!: "draft" | "sent" | "follow_up" | "reserved" | "sold" | "lost";
 
