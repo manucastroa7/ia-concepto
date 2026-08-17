@@ -333,6 +333,22 @@ interface ItemDetails {
   description?: string
 }
 
+export interface ProviderPurchaseInvoice {
+  id?: string
+  invoiceNumber?: string
+  providerId?: string
+  providerName?: string
+  taxTreatment?: 'facturable' | 'back_no_facturable'
+  netGravado21: number
+  iva21: number
+  netGravado105: number
+  iva105: number
+  exento: number
+  noComputable: number
+  otrosTributos: number
+  totalAmount: number
+}
+
 interface ItemEconomics {
   baseNetCost: number
   adjustments: Adjustment[]
@@ -348,6 +364,7 @@ interface ItemEconomics {
   gastosAdm?: number
   suplementos?: number
   customExpenses?: CustomExpense[]
+  providerPurchaseInvoice?: ProviderPurchaseInvoice
 }
 
 interface Item {
@@ -415,6 +432,7 @@ interface QuoteState {
   items: Item[]
   payments: Payment[]
   providerPayments: Payment[]
+  providerPurchaseInvoices?: ProviderPurchaseInvoice[]
   invoices?: ArcaInvoice[]
   globalAdjustment: number
   notes: string
@@ -430,6 +448,22 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportMode, setExportMode] = useState<'package_total' | 'detailed'>('package_total')
+
+  // Estado para Carga de Facturas de Compra de Mayoristas (Let's Travel, Toselli, etc.)
+  const [showAddPurchaseInvoiceModal, setShowAddPurchaseInvoiceModal] = useState(false)
+  const [purchaseInvoiceForm, setPurchaseInvoiceForm] = useState<ProviderPurchaseInvoice>({
+    providerName: 'Let me travel',
+    taxTreatment: 'facturable',
+    invoiceNumber: '',
+    netGravado21: 0,
+    iva21: 0,
+    netGravado105: 0,
+    iva105: 0,
+    exento: 0,
+    noComputable: 0,
+    otrosTributos: 0,
+    totalAmount: 0
+  })
 
   // Estados para Facturación ARCA & Proveedores
   const [showArcaInvoiceModal, setShowArcaInvoiceModal] = useState(false)
@@ -1489,14 +1523,35 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     const totalCollected = (quote.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
     const targetAmount = totalCollected > 0 ? totalCollected : totals.totalSale
 
-    // Auto-calculate suggested Tourism Tax Breakdown:
-    // Exterior services -> No Computable
-    // Local margin -> Gravado 21%
-    const estimatedNoComputable = Math.round(targetAmount * 0.85 * 100) / 100
-    const estimatedExento = Math.round(targetAmount * 0.10 * 100) / 100
-    const estimatedGravado21 = Math.round(targetAmount * 0.04 * 100) / 100
-    const estimatedIva21 = Math.round(estimatedGravado21 * 0.21 * 100) / 100
-    const calculatedTotal = estimatedNoComputable + estimatedExento + estimatedGravado21 + estimatedIva21
+    let calcNoComputable = 0
+    let calcExento = 0
+    let calcGravado21 = 0
+    let calcIva21 = 0
+    let calcGravado105 = 0
+    let calcIva105 = 0
+    let calcOtros = 0
+
+    if (quote.providerPurchaseInvoices && quote.providerPurchaseInvoices.length > 0) {
+      // Sum up from loaded mayorista purchase invoices:
+      quote.providerPurchaseInvoices.forEach(inv => {
+        calcNoComputable += Number(inv.noComputable || 0)
+        calcExento += Number(inv.exento || 0)
+        calcGravado105 += Number(inv.netGravado105 || 0)
+        calcIva105 += Number(inv.iva105 || 0)
+        calcOtros += Number(inv.otrosTributos || 0)
+      })
+      // Margin / Commission is Gravado 21%
+      calcGravado21 = Math.max(0, Math.round((targetAmount - (totals.totalNet - calcGravado105 - calcExento - calcNoComputable)) * 100) / 100)
+      calcIva21 = Math.round(calcGravado21 * 0.21 * 100) / 100
+    } else {
+      // Auto-calculate suggested Tourism Tax Breakdown if no purchase invoices loaded yet
+      calcNoComputable = Math.round(targetAmount * 0.85 * 100) / 100
+      calcExento = Math.round(targetAmount * 0.10 * 100) / 100
+      calcGravado21 = Math.round(targetAmount * 0.04 * 100) / 100
+      calcIva21 = Math.round(calcGravado21 * 0.21 * 100) / 100
+    }
+
+    const calculatedTotal = Math.round((calcNoComputable + calcExento + calcGravado21 + calcIva21 + calcGravado105 + calcIva105 + calcOtros) * 100) / 100
 
     const paxName = quote.passenger ? `${quote.passenger.surname}, ${quote.passenger.name}` : (quote.clientName || 'Cliente Particular')
     const paxCuit = quote.passenger?.document || ''
@@ -1512,13 +1567,13 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       receiverAddress: 'Ciudad Autónoma de Buenos Aires',
       currency: quote.currency === 'ARS' ? 'ARS' : 'USD',
       exchangeRate: 1515,
-      netGravado21: estimatedGravado21,
-      iva21: estimatedIva21,
-      netGravado105: 0,
-      iva105: 0,
-      exento: estimatedExento,
-      noComputable: estimatedNoComputable,
-      otrosTributos: 0,
+      netGravado21: calcGravado21,
+      iva21: calcIva21,
+      netGravado105: calcGravado105,
+      iva105: calcIva105,
+      exento: calcExento,
+      noComputable: calcNoComputable,
+      otrosTributos: calcOtros,
       totalAmount: calculatedTotal
     })
 
@@ -1570,6 +1625,70 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     } else {
       toast.success(`Factura electrónica ARCA emitida exitosamente (${voucherStr}) - CAE: 86251037765586`)
     }
+  }
+
+  const handleAddProviderPurchaseInvoice = () => {
+    if (!purchaseInvoiceForm.invoiceNumber) {
+      toast.error('Ingresá el número de factura del mayorista')
+      return
+    }
+
+    const calcTotal = Number(purchaseInvoiceForm.noComputable || 0) +
+      Number(purchaseInvoiceForm.exento || 0) +
+      Number(purchaseInvoiceForm.netGravado21 || 0) +
+      Number(purchaseInvoiceForm.iva21 || 0) +
+      Number(purchaseInvoiceForm.netGravado105 || 0) +
+      Number(purchaseInvoiceForm.iva105 || 0) +
+      Number(purchaseInvoiceForm.otrosTributos || 0)
+
+    const newPurchaseInvoice: ProviderPurchaseInvoice = {
+      ...purchaseInvoiceForm,
+      id: Date.now().toString(),
+      totalAmount: Math.round(calcTotal * 100) / 100
+    }
+
+    setQuote(prev => {
+      const updatedList = [...(prev.providerPurchaseInvoices || []), newPurchaseInvoice]
+      
+      // Auto recalculate ARCA Invoice Form if open:
+      let sumNoComp = 0
+      let sumExento = 0
+      let sumGrav105 = 0
+      let sumIva105 = 0
+      let sumOtros = 0
+      updatedList.forEach(inv => {
+        sumNoComp += Number(inv.noComputable || 0)
+        sumExento += Number(inv.exento || 0)
+        sumGrav105 += Number(inv.netGravado105 || 0)
+        sumIva105 += Number(inv.iva105 || 0)
+        sumOtros += Number(inv.otrosTributos || 0)
+      })
+
+      const targetAmount = (prev.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0) || totals.totalSale
+      const calcGrav21 = Math.max(0, Math.round((targetAmount - (totals.totalNet - sumGrav105 - sumExento - sumNoComp)) * 100) / 100)
+      const calcIva21 = Math.round(calcGrav21 * 0.21 * 100) / 100
+      const totalArca = Math.round((sumNoComp + sumExento + calcGrav21 + calcIva21 + sumGrav105 + sumIva105 + sumOtros) * 100) / 100
+
+      setArcaInvoiceForm((f: any) => ({
+        ...f,
+        noComputable: sumNoComp,
+        exento: sumExento,
+        netGravado21: calcGrav21,
+        iva21: calcIva21,
+        netGravado105: sumGrav105,
+        iva105: sumIva105,
+        otrosTributos: sumOtros,
+        totalAmount: totalArca
+      }))
+
+      return {
+        ...prev,
+        providerPurchaseInvoices: updatedList
+      }
+    })
+
+    setShowAddPurchaseInvoiceModal(false)
+    toast.success(`Factura de mayorista ${purchaseInvoiceForm.providerName} (${purchaseInvoiceForm.invoiceNumber}) registrada. Discriminación volcada a ARCA.`)
   }
 
   const handleSaveCRM = async () => {
@@ -4355,6 +4474,51 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 </div>
               </div>
 
+              {/* SECCIÓN CARGA DE FACTURAS DE COMPRA DE MAYORISTAS */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase text-slate-900 flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-indigo-600" /> Facturas de Compra Recibidas del Mayorista
+                    </p>
+                    <p className="text-[10.5px] text-slate-500">Cargá las facturas de Let me travel, Santa Catalina o Toselli para volcar automáticamente el No Computable exterior e IVA a ARCA.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPurchaseInvoiceModal(true)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> ➕ Cargar Factura Mayorista
+                  </button>
+                </div>
+
+                {(!quote.providerPurchaseInvoices || quote.providerPurchaseInvoices.length === 0) ? (
+                  <div className="p-3 bg-white border border-dashed border-slate-200 rounded-xl text-center">
+                    <p className="text-[11px] text-slate-400">Sin facturas de compra registradas aún. Podés ingresar la factura del mayorista o ajustar los importes manualmente abajo.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {quote.providerPurchaseInvoices.map((pinv, pidx) => (
+                      <div key={pinv.id || pidx} className="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-black text-slate-900">{pinv.providerName}</span>
+                          <span className="ml-2 font-mono text-[10px] text-slate-500">N° {pinv.invoiceNumber || 'S/N'}</span>
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            pinv.taxTreatment === 'back_no_facturable' ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-900'
+                          }`}>
+                            {pinv.taxTreatment === 'back_no_facturable' ? 'Back / No Facturable' : 'Facturable'}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-slate-900">${fmtVal(pinv.totalAmount)}</span>
+                          <span className="ml-2 text-[10px] text-slate-500">(Ext: ${fmtVal(pinv.noComputable)})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* 5 RUBROS IMPOSITIVOS REGLAMENTARIOS DE TURISMO ARCA */}
               <div className="space-y-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
                 <div className="flex justify-between items-center border-b border-indigo-100 pb-2">
@@ -5072,6 +5236,128 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA CARGAR FACTURA DE COMPRA DE MAYORISTA (Let's Travel, Toselli, etc.) */}
+      {showAddPurchaseInvoiceModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-indigo-600" /> Cargar Factura de Mayorista
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">Ingresá el desglose de la factura recibida del proveedor para sincronizar la Factura ARCA al Pasajero.</p>
+              </div>
+              <button onClick={() => setShowAddPurchaseInvoiceModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mayorista / Proveedor</label>
+                  <input
+                    type="text"
+                    value={purchaseInvoiceForm.providerName || ''}
+                    onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, providerName: e.target.value })}
+                    placeholder="Ej: Let me travel / Santa Catalina"
+                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">N° Comprobante Mayorista</label>
+                  <input
+                    type="text"
+                    value={purchaseInvoiceForm.invoiceNumber || ''}
+                    onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, invoiceNumber: e.target.value })}
+                    placeholder="Ej: 0005-00010773"
+                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-mono font-bold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tratamiento de Comisión / Facturación</label>
+                <select
+                  value={purchaseInvoiceForm.taxTreatment || 'facturable'}
+                  onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, taxTreatment: e.target.value as any })}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                >
+                  <option value="facturable">Facturable (Mayorista emite Factura A/B a la Agencia - ej: Let's Travel)</option>
+                  <option value="back_no_facturable">Back / No Facturable (Over-comisión sin IVA - ej: Toselli Back)</option>
+                </select>
+              </div>
+
+              <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-3">
+                <p className="font-black text-indigo-900 text-xs uppercase">Desglose Impositivo de la Factura de Compra:</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">No Computable (Exterior)</label>
+                    <input
+                      type="number"
+                      value={purchaseInvoiceForm.noComputable || ''}
+                      onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, noComputable: parseFloat(e.target.value) || 0 })}
+                      placeholder="Ej: 2550"
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Exento</label>
+                    <input
+                      type="number"
+                      value={purchaseInvoiceForm.exento || ''}
+                      onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, exento: parseFloat(e.target.value) || 0 })}
+                      placeholder="Ej: 0"
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Gravado 21%</label>
+                    <input
+                      type="number"
+                      value={purchaseInvoiceForm.netGravado21 || ''}
+                      onChange={e => {
+                        const net = parseFloat(e.target.value) || 0
+                        setPurchaseInvoiceForm({ ...purchaseInvoiceForm, netGravado21: net, iva21: Math.round(net * 0.21 * 100) / 100 })
+                      }}
+                      placeholder="Ej: 100"
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">IVA 21%</label>
+                    <input
+                      type="number"
+                      value={purchaseInvoiceForm.iva21 || ''}
+                      onChange={e => setPurchaseInvoiceForm({ ...purchaseInvoiceForm, iva21: parseFloat(e.target.value) || 0 })}
+                      placeholder="Ej: 21"
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-indigo-700"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAddPurchaseInvoiceModal(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleAddProviderPurchaseInvoice}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Registrar y Sincronizar con ARCA
+              </button>
+            </div>
           </div>
         </div>
       )}
