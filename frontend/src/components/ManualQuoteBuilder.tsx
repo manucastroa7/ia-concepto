@@ -4072,42 +4072,41 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs text-slate-600 font-medium">No hay comprobantes ARCA registrados para esta reserva aún.</p>
                 <p className="text-[11px] text-slate-400">Podés simular una Vista Previa Borrador o emitir la Factura Electrónica por el total del viaje.</p>
-              </div>
             ) : (
               <div className="space-y-3">
-                    <div key={inv.id || invIdx} className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${
-                            inv.status === 'draft' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                          }`}>
-                            {inv.docType} {inv.voucherNumberStr}
-                          </span>
-                          <span className="font-bold text-slate-900">{inv.receiverName} ({inv.receiverIvaCondition})</span>
-                          <span className="text-[10px] text-slate-400 font-mono">CUIT: {inv.receiverCuit || 'Sin CUIT'}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                          Fecha: {inv.date} | Moneda: {inv.currency} | T.C: {inv.exchangeRate} | CAE: <strong className="font-mono text-slate-700">{inv.caeNumber || 'Sin CAE (Borrador)'}</strong>
-                        </p>
+                {quote.invoices.map((inv, invIdx) => (
+                  <div key={inv.id || invIdx} className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                          inv.status === 'draft' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                        }`}>
+                          {inv.docType} {inv.voucherNumberStr}
+                        </span>
+                        <span className="font-bold text-slate-900">{inv.receiverName} ({inv.receiverIvaCondition})</span>
+                        <span className="text-[10px] text-slate-400 font-mono">CUIT: {inv.receiverCuit || 'Sin CUIT'}</span>
                       </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="font-black text-sm text-slate-900">{inv.currency} ${fmtVal(inv.totalAmount)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedArcaInvoiceForView(inv)}
-                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-all"
-                        >
-                          <FileText className="w-3.5 h-3.5" /> Ver / Imprimir
-                        </button>
-                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Fecha: {inv.date} | Moneda: {inv.currency} | T.C: {inv.exchangeRate} | CAE: <strong className="font-mono text-slate-700">{inv.caeNumber || 'Sin CAE (Borrador)'}</strong>
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
+                    <div className="flex items-center gap-3">
+                      <span className="font-black text-sm text-slate-900">{inv.currency} ${fmtVal(inv.totalAmount)}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedArcaInvoiceForView(inv)}
+                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-all"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Ver / Imprimir
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
         </div>
       )}
 
