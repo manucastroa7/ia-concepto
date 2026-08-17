@@ -4383,23 +4383,29 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       {/* MODAL CONFIGURACIÓN / EMISIÓN DE FACTURA ARCA */}
       {showArcaInvoiceModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white w-full max-w-3xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-indigo-600" />
-                  {arcaInvoiceForm.mode === 'draft' ? '🔎 Generar Vista Previa Borrador' : '⚡ Emitir Factura Electrónica ARCA'}
-                </h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  {arcaInvoiceForm.mode === 'draft' ? 'Cálculo de comprobante sin CAE / Sin impacto impositivo' : 'Conexión con entorno Sandbox / AFIP'}
-                </p>
+          <div className="bg-white w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            {/* HEADER STICKY */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl shrink-0">
+                  <Receipt className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                    {arcaInvoiceForm.mode === 'draft' ? '🔎 Generar Vista Previa Borrador' : '⚡ Emitir Factura Electrónica ARCA'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {arcaInvoiceForm.mode === 'draft' ? 'Cálculo de comprobante sin CAE / Sin impacto impositivo' : 'Conexión con entorno Sandbox / AFIP'}
+                  </p>
+                </div>
               </div>
               <button onClick={() => setShowArcaInvoiceModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            {/* SCROLLABLE BODY */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar text-xs">
               {/* RECEPTOR */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                 <div className="sm:col-span-2">
@@ -4486,9 +4492,9 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   <button
                     type="button"
                     onClick={() => setShowAddPurchaseInvoiceModal(true)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0 transition-all"
                   >
-                    <Plus className="w-3.5 h-3.5" /> ➕ Cargar Factura Mayorista
+                    <Plus className="w-4 h-4" /> Cargar Factura Mayorista
                   </button>
                 </div>
 
@@ -4597,7 +4603,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+            {/* FOOTER STICKY */}
+            <div className="p-5 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-white">
               <button
                 type="button"
                 onClick={() => setShowArcaInvoiceModal(false)}
