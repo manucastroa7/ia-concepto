@@ -4118,23 +4118,15 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               <button
                 type="button"
                 onClick={() => handleDeleteQuote(quoteToDelete.id)}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
+                className="px-5       {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
       {showExportModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-4xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
-            {/* HEADER DE EXPORTACIÓN */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* HEADER STICKY DE EXPORTACIÓN */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 z-10 shadow-2xs">
               <div>
-                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                   <FileText className="w-5 h-5 text-indigo-600" /> Exportar Cotización Comercial
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">Seleccioná la modalidad de presentación para enviar o imprimir para el cliente</p>
@@ -4163,105 +4155,117 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   </button>
                 </div>
 
-                <button onClick={() => setShowExportModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <button onClick={() => setShowExportModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer rounded-xl hover:bg-slate-100 transition-all">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* DOCUMENTO DE COTIZACIÓN COMERCIAL IMPRIMIBLE VOUCHER */}
-            <div id="printable-quote-document" className="p-8 bg-white border border-slate-200 rounded-2xl space-y-6 shadow-xs font-sans text-slate-800">
-              
-              {/* CABECERA VOUCHER DE AGENCIA */}
-              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
-                <div>
-                  <h1 className="text-2xl font-black uppercase text-slate-900 tracking-tight">CONCEPTO EVT</h1>
-                  <p className="text-xs font-bold text-slate-500">Empresa de Viajes y Turismo · Leg. 18291</p>
-                  <p className="text-xs text-slate-400">info@conceptoviajes.com.ar | www.conceptoviajes.com.ar</p>
+            {/* CUERPO SCROLLABLE CON EL DOCUMENTO IMPRIMIBLE */}
+            <div className="p-6 sm:p-8 overflow-y-auto space-y-6 flex-1 custom-scrollbar bg-slate-50/50">
+              <div id="printable-quote-document" className="p-6 sm:p-8 bg-white border border-slate-200 rounded-2xl space-y-6 shadow-xs font-sans text-slate-800">
+                
+                {/* CABECERA VOUCHER DE AGENCIA */}
+                <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
+                  <div>
+                    <h1 className="text-2xl font-black uppercase text-slate-900 tracking-tight">CONCEPTO EVT</h1>
+                    <p className="text-xs font-bold text-slate-500">Empresa de Viajes y Turismo · Leg. 18291</p>
+                    <p className="text-xs text-slate-400">info@conceptoviajes.com.ar | www.conceptoviajes.com.ar</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-black uppercase rounded-lg border border-indigo-200 inline-block mb-1">
+                      COTIZACIÓN OFICIAL DE VIAJE
+                    </span>
+                    <p className="text-xs text-slate-500 font-medium">Fecha: <strong>{new Date().toLocaleDateString('es-AR')}</strong></p>
+                    <p className="text-xs text-slate-500 font-medium">Moneda: <strong>{quote.currency}</strong></p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-black uppercase rounded-lg border border-indigo-200 inline-block mb-1">
-                    COTIZACIÓN OFICIAL DE VIAJE
-                  </span>
-                  <p className="text-xs text-slate-500 font-medium">Fecha: <strong>{new Date().toLocaleDateString('es-AR')}</strong></p>
-                  <p className="text-xs text-slate-500 font-medium">Moneda: <strong>{quote.currency}</strong></p>
+
+                {/* DATOS DEL PASAJERO Y DETALLES DEL VIAJE */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                  <div>
+                    <p className="font-bold text-slate-400 uppercase text-[10px]">Pasajero Principal</p>
+                    <p className="font-black text-slate-900 text-sm uppercase">{quote.passenger ? `${quote.passenger.surname}, ${quote.passenger.name}` : (quote.clientName || 'Cliente Particular')}</p>
+                    <p className="text-slate-600 font-medium">Pasajeros Totales: {quote.paxCount} pax</p>
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-400 uppercase text-[10px]">Detalles del Itinerario</p>
+                    <p className="font-black text-slate-900 text-sm uppercase">{quote.title || 'Propuesta de Viaje'}</p>
+                    <p className="text-slate-600 font-medium">Destino: {quote.destination || 'Por definir'} {quote.startDate ? `| Fechas: ${fmtDate(quote.startDate)} al ${fmtDate(quote.endDate)}` : ''}</p>
+                  </div>
                 </div>
-              </div>
 
-              {/* DATOS DEL PASAJERO Y DETALLES DEL VIAJE */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-                <div>
-                  <p className="font-bold text-slate-400 uppercase text-[10px]">Pasajero Principal</p>
-                  <p className="font-black text-slate-900 text-sm uppercase">{quote.passenger ? `${quote.passenger.surname}, ${quote.passenger.name}` : (quote.clientName || 'Cliente Particular')}</p>
-                  <p className="text-slate-600 font-medium">Pasajeros Totales: {quote.paxCount} pax</p>
-                </div>
-                <div>
-                  <p className="font-bold text-slate-400 uppercase text-[10px]">Detalles del Itinerario</p>
-                  <p className="font-black text-slate-900 text-sm uppercase">{quote.title || 'Propuesta de Viaje'}</p>
-                  <p className="text-slate-600 font-medium">Destino: {quote.destination || 'Por definir'} {quote.startDate ? `| Fechas: ${fmtDate(quote.startDate)} al ${fmtDate(quote.endDate)}` : ''}</p>
-                </div>
-              </div>
-
-              {/* DETALLE DE SERVICIOS */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
-                  Resumen del Itinerario de Servicios
-                </h4>
-
-                {quote.items.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No hay servicios añadidos a la cotización aún.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {quote.items.map((item, idx) => {
-                      const eco = calculateItemEconomics(item)
-                      return (
-                        <div key={item.id} className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 text-xs flex justify-between items-center gap-4">
-                          <div className="space-y-0.5 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-indigo-600 uppercase text-[11px]">{idx + 1}. [{item.type}]</span>
-                              <span className="font-black text-slate-900 uppercase">{item.title || 'Servicio de Viaje'}</span>
-                            </div>
-                            <p className="text-slate-600 font-medium text-[11px]">{item.description || 'Sin detalle adicional'}</p>
-                          </div>
-
-                          {exportMode === 'detailed' && (
-                            <div className="text-right shrink-0">
-                              <span className="font-black text-slate-900 text-sm">{quote.currency} ${fmtVal(eco.totalSale)}</span>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                {/* BRIEFING DE SOLICITUD INICIAL (SI EXISTE) */}
+                {quote.clientRequestNotes && (
+                  <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl text-xs space-y-0.5">
+                    <p className="font-black uppercase text-[10px] text-amber-900">Solicitud / Solicitado por el Pasajero:</p>
+                    <p className="text-slate-700 italic font-medium">{quote.clientRequestNotes}</p>
                   </div>
                 )}
-              </div>
 
-              {/* RESUMEN FINANCIERO TOTAL */}
-              <div className="p-5 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-indigo-300">
-                    {exportMode === 'package_total' ? 'PRECIO TOTAL DEL PAQUETE DE VIAJE' : 'SUMA TOTAL DE SERVICIOS COTIZADOS'}
+                {/* DETALLE DE SERVICIOS */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
+                    Resumen del Itinerario de Servicios
+                  </h4>
+
+                  {quote.items.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No hay servicios añadidos a la cotización aún.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {quote.items.map((item, idx) => {
+                        const eco = calculateItemEconomics(item)
+                        const itemTitle = item.title || item.details?.hotelName || item.details?.airline || item.details?.route || item.details?.serviceName || `${item.type.toUpperCase()} de Viaje`
+                        const itemDesc = item.description || (item.details?.route ? `Ruta: ${item.details.route}` : (item.details?.hotelName ? `Hotel en ${item.details.city || 'Destino'}` : ''))
+                        return (
+                          <div key={item.id} className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 text-xs flex justify-between items-center gap-4">
+                            <div className="space-y-0.5 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-indigo-600 uppercase text-[11px]">{idx + 1}. [{item.type}]</span>
+                                <span className="font-black text-slate-900 uppercase">{itemTitle}</span>
+                              </div>
+                              {itemDesc && <p className="text-slate-600 font-medium text-[11px]">{itemDesc}</p>}
+                            </div>
+
+                            {exportMode === 'detailed' && (
+                              <div className="text-right shrink-0">
+                                <span className="font-black text-slate-900 text-sm">{quote.currency} ${fmtVal(eco.totalSale)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* RESUMEN FINANCIERO TOTAL */}
+                <div className="p-5 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-indigo-300">
+                      {exportMode === 'package_total' ? 'PRECIO TOTAL DEL PAQUETE DE VIAJE' : 'SUMA TOTAL DE SERVICIOS COTIZADOS'}
+                    </p>
+                    <p className="text-xs text-slate-300 font-medium">Incluye todos los ítems e impuestos del itinerario descripto.</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-amber-400">{quote.currency} ${fmtVal(totals.totalSale)}</span>
+                  </div>
+                </div>
+
+                {/* AVISO LEGAL / DISCLAIMER OBLIGATORIO */}
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-900 space-y-1">
+                  <p className="font-black uppercase flex items-center gap-1.5 text-amber-950">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Condiciones Importantes de Cotización:
                   </p>
-                  <p className="text-xs text-slate-300 font-medium">Incluye todos los ítems e impuestos del itinerario descripto.</p>
+                  <p className="font-semibold text-amber-800 leading-snug">
+                    Todas las tarifas y servicios expresados en el presente presupuesto están estrictamente sujetos a disponibilidad al momento de solicitar la confirmación efectiva de la reserva y a posibles modificaciones de tarifa sin previo aviso.
+                  </p>
                 </div>
-                <div className="text-right">
-                  <span className="text-2xl font-black text-amber-400">{quote.currency} ${fmtVal(totals.totalSale)}</span>
-                </div>
-              </div>
-
-              {/* AVISO LEGAL / DISCLAIMER OBLIGATORIO */}
-              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-900 space-y-1">
-                <p className="font-black uppercase flex items-center gap-1.5 text-amber-950">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Condiciones Importantes de Cotización:
-                </p>
-                <p className="font-semibold text-amber-800 leading-snug">
-                  Todas las tarifas y servicios expresados en el presente presupuesto están estrictamente sujetos a disponibilidad al momento de solicitar la confirmación efectiva de la reserva y a posibles modificaciones de tarifa sin previo aviso.
-                </p>
               </div>
             </div>
 
-            {/* BOTONES DE ACCIÓN EXPORTAR */}
-            <div className="flex flex-wrap justify-between items-center gap-3 pt-2">
+            {/* FOOTER STICKY DE ACCIONES */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-white flex flex-wrap justify-between items-center gap-3 shrink-0 z-10">
               <button
                 type="button"
                 onClick={() => {
@@ -4299,7 +4303,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   txt += `*ITINERARIO DE SERVICIOS:*\n`
                   quote.items.forEach((it, i) => {
                     const eco = calculateItemEconomics(it)
-                    txt += `${i+1}. [${it.type.toUpperCase()}] ${it.title}`
+                    const title = it.title || it.details?.hotelName || it.details?.airline || it.details?.route || `${it.type.toUpperCase()} de Viaje`
+                    txt += `${i+1}. [${it.type.toUpperCase()}] ${title}`
                     if (exportMode === 'detailed') txt += ` - ${quote.currency} $${fmtVal(eco.totalSale)}`
                     txt += `\n`
                   })
@@ -4309,6 +4314,14 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   toast.success('Resumen de cotización copiado para WhatsApp')
                 }}
                 className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Share2 className="w-4 h-4" /> Copiar para WhatsApp
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}Name="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
               >
                 <Share2 className="w-4 h-4" /> Copiar para WhatsApp
               </button>
