@@ -3439,7 +3439,7 @@ export function ManualQuoteBuilder() {
                     <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin cobros registrados aún.</p>
                   ) : (
                     (quote.payments || []).map(p => {
-                      const isExp = expandedPayments[p.id] !== false
+                      const isExp = !!expandedPayments[p.id]
                       return (
                         <div key={p.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all">
                           {/* BARRA RESUMEN COLAPSADA */}
@@ -3586,7 +3586,7 @@ export function ManualQuoteBuilder() {
                     <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin pagos a proveedores registrados.</p>
                   ) : (
                     (quote.providerPayments || []).map(p => {
-                      const isExp = expandedPayments[p.id] !== false
+                      const isExp = !!expandedPayments[p.id]
                       const pProvider = operators.find(o => o.id === p.providerId)
                       return (
                         <div key={p.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all">
