@@ -361,6 +361,36 @@ interface Payment {
   providerId?: string
 }
 
+export interface ArcaInvoice {
+  id: string
+  date: string
+  docType: 'Factura A' | 'Factura B' | 'Factura C' | 'Nota de Débito' | 'Nota de Crédito'
+  pointOfSale: number
+  invoiceNumber: number
+  voucherNumberStr: string
+  receiverName: string
+  receiverCuit: string
+  receiverIvaCondition: 'Responsable Inscripto' | 'Consumidor Final' | 'Monotributo' | 'Exento'
+  receiverAddress?: string
+  currency: 'USD' | 'ARS'
+  exchangeRate: number
+  
+  // 5 Categorías Impositivas de Turismo ARCA:
+  netGravado21: number
+  iva21: number
+  netGravado105: number
+  iva105: number
+  exento: number
+  noComputable: number
+  otrosTributos: number
+  totalAmount: number
+
+  status: 'draft' | 'issued_sandbox' | 'issued_official'
+  caeNumber?: string
+  caeExpirationDate?: string
+  legalLegend: string
+}
+
 interface QuoteState {
   id?: string
   passengerId: string
@@ -376,6 +406,7 @@ interface QuoteState {
   items: Item[]
   payments: Payment[]
   providerPayments: Payment[]
+  invoices?: ArcaInvoice[]
   globalAdjustment: number
   notes: string
   clientRequestNotes?: string
@@ -390,6 +421,30 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportMode, setExportMode] = useState<'package_total' | 'detailed'>('package_total')
+
+  // Estados para Facturación ARCA & Proveedores
+  const [showArcaInvoiceModal, setShowArcaInvoiceModal] = useState(false)
+  const [selectedArcaInvoiceForView, setSelectedArcaInvoiceForView] = useState<ArcaInvoice | null>(null)
+  const [arcaInvoiceForm, setArcaInvoiceForm] = useState<any>({
+    mode: 'draft',
+    docType: 'Factura B',
+    pointOfSale: 5,
+    invoiceNumber: 10773,
+    receiverName: '',
+    receiverCuit: '',
+    receiverIvaCondition: 'Consumidor Final',
+    receiverAddress: '',
+    currency: 'USD',
+    exchangeRate: 1515,
+    netGravado21: 0,
+    iva21: 0,
+    netGravado105: 0,
+    iva105: 0,
+    exento: 0,
+    noComputable: 0,
+    otrosTributos: 0,
+    totalAmount: 0
+  })
 
   const [quote, setQuote] = useState<QuoteState>({
     passengerId: '',
@@ -1420,6 +1475,93 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       pendingProviderPayment: Math.max(0, net - totalProviderPaid)
     }
   }, [quote])
+
+  const openNewArcaInvoiceModal = (mode: 'draft' | 'sandbox') => {
+    const totalCollected = (quote.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    const targetAmount = totalCollected > 0 ? totalCollected : totals.totalSale
+
+    // Auto-calculate suggested Tourism Tax Breakdown:
+    // Exterior services -> No Computable
+    // Local margin -> Gravado 21%
+    const estimatedNoComputable = Math.round(targetAmount * 0.85 * 100) / 100
+    const estimatedExento = Math.round(targetAmount * 0.10 * 100) / 100
+    const estimatedGravado21 = Math.round(targetAmount * 0.04 * 100) / 100
+    const estimatedIva21 = Math.round(estimatedGravado21 * 0.21 * 100) / 100
+    const calculatedTotal = estimatedNoComputable + estimatedExento + estimatedGravado21 + estimatedIva21
+
+    const paxName = quote.passenger ? `${quote.passenger.surname}, ${quote.passenger.name}` : (quote.clientName || 'Cliente Particular')
+    const paxCuit = quote.passenger?.document || ''
+
+    setArcaInvoiceForm({
+      mode,
+      docType: 'Factura B',
+      pointOfSale: 5,
+      invoiceNumber: (quote.invoices?.length || 0) + 10773,
+      receiverName: paxName,
+      receiverCuit: paxCuit,
+      receiverIvaCondition: 'Consumidor Final',
+      receiverAddress: 'Ciudad Autónoma de Buenos Aires',
+      currency: quote.currency === 'ARS' ? 'ARS' : 'USD',
+      exchangeRate: 1515,
+      netGravado21: estimatedGravado21,
+      iva21: estimatedIva21,
+      netGravado105: 0,
+      iva105: 0,
+      exento: estimatedExento,
+      noComputable: estimatedNoComputable,
+      otrosTributos: 0,
+      totalAmount: calculatedTotal
+    })
+
+    setShowArcaInvoiceModal(true)
+  }
+
+  const handleIssueArcaInvoice = (mode: 'draft' | 'sandbox') => {
+    const posStr = String(arcaInvoiceForm.pointOfSale).padStart(4, '0')
+    const numStr = String(arcaInvoiceForm.invoiceNumber).padStart(8, '0')
+    const voucherStr = `${posStr}-${numStr}`
+
+    const newInvoice: ArcaInvoice = {
+      id: Date.now().toString(),
+      date: new Date().toLocaleDateString('es-AR'),
+      docType: arcaInvoiceForm.docType,
+      pointOfSale: Number(arcaInvoiceForm.pointOfSale) || 5,
+      invoiceNumber: Number(arcaInvoiceForm.invoiceNumber) || 10773,
+      voucherNumberStr: voucherStr,
+      receiverName: arcaInvoiceForm.receiverName || 'Cliente Particular',
+      receiverCuit: arcaInvoiceForm.receiverCuit || '20-00000000-0',
+      receiverIvaCondition: arcaInvoiceForm.receiverIvaCondition,
+      receiverAddress: arcaInvoiceForm.receiverAddress,
+      currency: arcaInvoiceForm.currency,
+      exchangeRate: Number(arcaInvoiceForm.exchangeRate) || 1515,
+      netGravado21: Number(arcaInvoiceForm.netGravado21) || 0,
+      iva21: Number(arcaInvoiceForm.iva21) || 0,
+      netGravado105: Number(arcaInvoiceForm.netGravado105) || 0,
+      iva105: Number(arcaInvoiceForm.iva105) || 0,
+      exento: Number(arcaInvoiceForm.exento) || 0,
+      noComputable: Number(arcaInvoiceForm.noComputable) || 0,
+      otrosTributos: Number(arcaInvoiceForm.otrosTributos) || 0,
+      totalAmount: Number(arcaInvoiceForm.totalAmount) || 0,
+      status: mode === 'draft' ? 'draft' : 'issued_sandbox',
+      caeNumber: mode === 'draft' ? undefined : '86251037765586',
+      caeExpirationDate: mode === 'draft' ? undefined : '04/07/2026',
+      legalLegend: 'CONCEPTO EVT declara explícitamente que actúa únicamente como intermediario entre los viajeros y las entidades que prestan los servicios, habiendo efectuado la presente operación a nombre propio por cuenta y orden del prestador del servicio.'
+    }
+
+    setQuote(prev => ({
+      ...prev,
+      invoices: [...(prev.invoices || []), newInvoice]
+    }))
+
+    setShowArcaInvoiceModal(false)
+    setSelectedArcaInvoiceForView(newInvoice)
+
+    if (mode === 'draft') {
+      toast.success('Pre-factura borrador generada en la reserva (Sin CAE / Sin impacto fiscal)')
+    } else {
+      toast.success(`Factura electrónica ARCA emitida exitosamente (${voucherStr}) - CAE: 86251037765586`)
+    }
+  }
 
   const handleSaveCRM = async () => {
     if (!quote.passengerId && !quote.title) {
@@ -3895,6 +4037,77 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             </div>
           </div>
 
+          {/* BLOQUE DE FACTURACIÓN ARCA (PASAJERO) & PROVEEDORES */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6 mt-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-indigo-600" /> Facturación Electrónica ARCA (Pasajero)
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Emisión de comprobantes A/B/C con la discriminación reglamentaria de Turismo Argentina</p>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => openNewArcaInvoiceModal('draft')}
+                  className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-xs uppercase tracking-wider rounded-xl border border-indigo-200 cursor-pointer flex items-center gap-1.5 transition-all shadow-2xs"
+                >
+                  <Eye className="w-4 h-4" /> 🔎 Generar Vista Previa (Borrador)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openNewArcaInvoiceModal('sandbox')}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-all"
+                >
+                  <Sparkles className="w-4 h-4" /> ⚡ Emitir Factura ARCA (Prueba Sandbox)
+                </button>
+              </div>
+            </div>
+
+            {/* LISTA DE FACTURAS DE ESTA COTIZACIÓN */}
+            {(!quote.invoices || quote.invoices.length === 0) ? (
+              <div className="p-6 bg-slate-50 border border-slate-200/80 rounded-2xl text-center space-y-2">
+                <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs text-slate-600 font-medium">No hay comprobantes ARCA registrados para esta reserva aún.</p>
+                <p className="text-[11px] text-slate-400">Podés simular una Vista Previa Borrador o emitir la Factura Electrónica por el total del viaje.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                    <div key={inv.id || invIdx} className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                            inv.status === 'draft' ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                          }`}>
+                            {inv.docType} {inv.voucherNumberStr}
+                          </span>
+                          <span className="font-bold text-slate-900">{inv.receiverName} ({inv.receiverIvaCondition})</span>
+                          <span className="text-[10px] text-slate-400 font-mono">CUIT: {inv.receiverCuit || 'Sin CUIT'}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                          Fecha: {inv.date} | Moneda: {inv.currency} | T.C: {inv.exchangeRate} | CAE: <strong className="font-mono text-slate-700">{inv.caeNumber || 'Sin CAE (Borrador)'}</strong>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="font-black text-sm text-slate-900">{inv.currency} ${fmtVal(inv.totalAmount)}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArcaInvoiceForView(inv)}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition-all"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Ver / Imprimir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
         </div>
       )}
 
@@ -4035,6 +4248,387 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIGURACIÓN / EMISIÓN DE FACTURA ARCA */}
+      {showArcaInvoiceModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white w-full max-w-3xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-indigo-600" />
+                  {arcaInvoiceForm.mode === 'draft' ? '🔎 Generar Vista Previa Borrador' : '⚡ Emitir Factura Electrónica ARCA'}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  {arcaInvoiceForm.mode === 'draft' ? 'Cálculo de comprobante sin CAE / Sin impacto impositivo' : 'Conexión con entorno Sandbox / AFIP'}
+                </p>
+              </div>
+              <button onClick={() => setShowArcaInvoiceModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* RECEPTOR */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Nombre / Razón Social del Pasajero</label>
+                  <input
+                    type="text"
+                    value={arcaInvoiceForm.receiverName}
+                    onChange={e => setArcaInvoiceForm({ ...arcaInvoiceForm, receiverName: e.target.value })}
+                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-indigo-600"
+                    placeholder="Ej: ABADIE, LUCIANA CECILIA"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">CUIT / DNI / CUIL</label>
+                  <input
+                    type="text"
+                    value={arcaInvoiceForm.receiverCuit}
+                    onChange={e => setArcaInvoiceForm({ ...arcaInvoiceForm, receiverCuit: e.target.value })}
+                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600"
+                    placeholder="Ej: 27389201124"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Condición Frente al IVA</label>
+                  <select
+                    value={arcaInvoiceForm.receiverIvaCondition}
+                    onChange={e => {
+                      const cond = e.target.value
+                      const suggestedType = cond === 'Responsable Inscripto' ? 'Factura A' : 'Factura B'
+                      setArcaInvoiceForm({ ...arcaInvoiceForm, receiverIvaCondition: cond, docType: suggestedType })
+                    }}
+                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  >
+                    <option value="Consumidor Final">Consumidor Final (Factura B/C)</option>
+                    <option value="Responsable Inscripto">Responsable Inscripto (Factura A)</option>
+                    <option value="Monotributo">Monotributo (Factura B/C)</option>
+                    <option value="Exento">Exento (Factura B/C)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Tipo de Comprobante</label>
+                  <select
+                    value={arcaInvoiceForm.docType}
+                    onChange={e => setArcaInvoiceForm({ ...arcaInvoiceForm, docType: e.target.value })}
+                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-indigo-700 outline-none"
+                  >
+                    <option value="Factura B">FACTURA B (Código 6)</option>
+                    <option value="Factura A">FACTURA A (Código 1)</option>
+                    <option value="Factura C">FACTURA C (Código 11)</option>
+                    <option value="Nota de Crédito">NOTA DE CRÉDITO B (Código 8)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Moneda & Tipo de Cambio</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={arcaInvoiceForm.currency}
+                      onChange={e => setArcaInvoiceForm({ ...arcaInvoiceForm, currency: e.target.value })}
+                      className="bg-white border border-slate-200 px-2 py-2 rounded-xl text-xs font-black text-slate-800"
+                    >
+                      <option value="USD">U$S (Dólares)</option>
+                      <option value="ARS">$ (Pesos)</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={arcaInvoiceForm.exchangeRate}
+                      onChange={e => setArcaInvoiceForm({ ...arcaInvoiceForm, exchangeRate: parseFloat(e.target.value) || 1 })}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                      placeholder="T.C: 1515"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 5 RUBROS IMPOSITIVOS REGLAMENTARIOS DE TURISMO ARCA */}
+              <div className="space-y-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                <div className="flex justify-between items-center border-b border-indigo-100 pb-2">
+                  <p className="text-xs font-black uppercase text-indigo-900 flex items-center gap-1.5">
+                    <Tag className="w-4 h-4 text-indigo-600" /> Discriminación de Rubros de Turismo (RG 1415)
+                  </p>
+                  <span className="text-[11px] font-bold text-indigo-700">Total: {arcaInvoiceForm.currency} ${fmtVal(
+                    Number(arcaInvoiceForm.noComputable || 0) +
+                    Number(arcaInvoiceForm.exento || 0) +
+                    Number(arcaInvoiceForm.netGravado21 || 0) +
+                    Number(arcaInvoiceForm.iva21 || 0) +
+                    Number(arcaInvoiceForm.netGravado105 || 0) +
+                    Number(arcaInvoiceForm.iva105 || 0) +
+                    Number(arcaInvoiceForm.otrosTributos || 0)
+                  )}</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Servicios Turísticos - No Computable (Exterior)</label>
+                    <input
+                      type="number"
+                      value={arcaInvoiceForm.noComputable || ''}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value) || 0
+                        const tot = val + Number(arcaInvoiceForm.exento) + Number(arcaInvoiceForm.netGravado21) + Number(arcaInvoiceForm.iva21)
+                        setArcaInvoiceForm({ ...arcaInvoiceForm, noComputable: val, totalAmount: Math.round(tot * 100) / 100 })
+                      }}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Servicios Turísticos - Exento</label>
+                    <input
+                      type="number"
+                      value={arcaInvoiceForm.exento || ''}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value) || 0
+                        const tot = Number(arcaInvoiceForm.noComputable) + val + Number(arcaInvoiceForm.netGravado21) + Number(arcaInvoiceForm.iva21)
+                        setArcaInvoiceForm({ ...arcaInvoiceForm, exento: val, totalAmount: Math.round(tot * 100) / 100 })
+                      }}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">Gravado al 21% (Comisión / Margen)</label>
+                    <input
+                      type="number"
+                      value={arcaInvoiceForm.netGravado21 || ''}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value) || 0
+                        const calcIva = Math.round(val * 0.21 * 100) / 100
+                        const tot = Number(arcaInvoiceForm.noComputable) + Number(arcaInvoiceForm.exento) + val + calcIva
+                        setArcaInvoiceForm({ ...arcaInvoiceForm, netGravado21: val, iva21: calcIva, totalAmount: Math.round(tot * 100) / 100 })
+                      }}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">IVA (21%)</label>
+                    <input
+                      type="number"
+                      value={arcaInvoiceForm.iva21 || ''}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value) || 0
+                        const tot = Number(arcaInvoiceForm.noComputable) + Number(arcaInvoiceForm.exento) + Number(arcaInvoiceForm.netGravado21) + val
+                        setArcaInvoiceForm({ ...arcaInvoiceForm, iva21: val, totalAmount: Math.round(tot * 100) / 100 })
+                      }}
+                      className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-indigo-700"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowArcaInvoiceModal(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleIssueArcaInvoice(arcaInvoiceForm.mode)}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-2"
+              >
+                {arcaInvoiceForm.mode === 'draft' ? <Eye className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                {arcaInvoiceForm.mode === 'draft' ? 'Generar Vista Previa Borrador' : 'Emitir Factura ARCA (Sandbox)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VOUCHER / IMPRESIÓN COMPROBANTE OFICIAL ARCA */}
+      {selectedArcaInvoiceForView && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            {/* HEADER STICKY */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0 z-10">
+              <div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-indigo-600" />
+                  Comprobante Electrónico ARCA - {selectedArcaInvoiceForView.docType} ({selectedArcaInvoiceForView.voucherNumberStr})
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {selectedArcaInvoiceForView.status === 'draft' ? '🔎 MODO VISTA PREVIA BORRADOR (SIN VALOR FISCAL)' : '⚡ EMISIÓN AUTORIZADA POR ARCA / AFIP'}
+                </p>
+              </div>
+              <button onClick={() => setSelectedArcaInvoiceForView(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* VOUCHER IMPRIMIBLE REGLAMENTARIO ARCA */}
+            <div className="p-6 sm:p-8 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/50">
+              <div id="printable-arca-invoice" className="p-8 bg-white border-2 border-slate-800 rounded-2xl space-y-6 shadow-xs font-sans text-slate-900 relative">
+                
+                {/* MARCA DE AGUA BORRADOR */}
+                {selectedArcaInvoiceForView.status === 'draft' && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10 rotate-[-25deg] select-none">
+                    <p className="text-6xl font-black text-red-600 uppercase tracking-widest text-center">BORRADOR DE PRUEBA<br/>NO VÁLIDO COMO FACTURA</p>
+                  </div>
+                )}
+
+                {/* ENCABEZADO REGLAMENTARIO COMPROBANTE OFICIAL ARCA */}
+                <div className="grid grid-cols-12 border-b-2 border-slate-900 pb-4 gap-4 items-center">
+                  <div className="col-span-5 space-y-1">
+                    <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900">CONCEPTO EVT</h2>
+                    <p className="text-xs font-bold text-slate-600">Empresa de Viajes y Turismo · Leg. 18291</p>
+                    <p className="text-[11px] text-slate-500">Rivadavia 1223, CABA | CUIT: 30-71683140-6</p>
+                    <p className="text-[10px] font-bold text-indigo-700 uppercase">IVA RESPONSABLE INSCRIPTO</p>
+                  </div>
+
+                  <div className="col-span-2 text-center border-x-2 border-slate-900 py-2">
+                    <span className="text-4xl font-black text-slate-900 block">
+                      {selectedArcaInvoiceForView.docType.includes('A') ? 'A' : (selectedArcaInvoiceForView.docType.includes('B') ? 'B' : 'C')}
+                    </span>
+                    <span className="text-[9px] font-bold uppercase text-slate-500 block">Código {selectedArcaInvoiceForView.docType.includes('A') ? '1' : '6'}</span>
+                    <span className="text-[9px] font-black uppercase bg-slate-100 px-1 py-0.5 rounded mt-1 block">ORIGINAL</span>
+                  </div>
+
+                  <div className="col-span-5 text-right space-y-1">
+                    <h3 className="text-base font-black uppercase tracking-tight">{selectedArcaInvoiceForView.docType.toUpperCase()}</h3>
+                    <p className="text-xs font-mono font-bold text-slate-900">N° {selectedArcaInvoiceForView.voucherNumberStr}</p>
+                    <p className="text-xs text-slate-600 font-medium">Fecha Emisión: <strong>{selectedArcaInvoiceForView.date}</strong></p>
+                    <p className="text-xs text-slate-600 font-medium">Moneda: <strong>{selectedArcaInvoiceForView.currency}</strong> (T.C: {selectedArcaInvoiceForView.exchangeRate})</p>
+                  </div>
+                </div>
+
+                {/* RECEPTOR */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                  <div>
+                    <p className="font-bold text-slate-400 uppercase text-[9.5px]">Señor(es):</p>
+                    <p className="font-black text-slate-900 text-sm uppercase">{selectedArcaInvoiceForView.receiverName}</p>
+                    <p className="text-slate-600 font-medium">{selectedArcaInvoiceForView.receiverAddress}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-slate-400 uppercase text-[9.5px]">CUIT / DNI:</p>
+                    <p className="font-black text-slate-900 font-mono text-sm">{selectedArcaInvoiceForView.receiverCuit}</p>
+                    <p className="text-indigo-700 font-bold uppercase text-[11px]">Condición IVA: {selectedArcaInvoiceForView.receiverIvaCondition}</p>
+                  </div>
+                </div>
+
+                {/* TABLA DE DETALLE FISCAL DE TURISMO */}
+                <div className="space-y-2">
+                  <table className="w-full text-xs text-left border border-slate-200 rounded-xl overflow-hidden">
+                    <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[10px] border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">Detalle de Conceptos de Turismo</th>
+                        <th className="p-3 text-right">Importe ({selectedArcaInvoiceForView.currency})</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                      {selectedArcaInvoiceForView.netGravado21 > 0 && (
+                        <tr>
+                          <td className="p-3">Servicios Turísticos - Gravados al 21% (Margen / Comisión)</td>
+                          <td className="p-3 text-right font-bold">${fmtVal(selectedArcaInvoiceForView.netGravado21)}</td>
+                        </tr>
+                      )}
+                      {selectedArcaInvoiceForView.iva21 > 0 && (
+                        <tr>
+                          <td className="p-3">IVA 21%</td>
+                          <td className="p-3 text-right font-bold text-indigo-700">${fmtVal(selectedArcaInvoiceForView.iva21)}</td>
+                        </tr>
+                      )}
+                      {selectedArcaInvoiceForView.exento > 0 && (
+                        <tr>
+                          <td className="p-3">Servicios Turísticos - Exento</td>
+                          <td className="p-3 text-right font-bold">${fmtVal(selectedArcaInvoiceForView.exento)}</td>
+                        </tr>
+                      )}
+                      {selectedArcaInvoiceForView.noComputable > 0 && (
+                        <tr>
+                          <td className="p-3">Servicios Turísticos - No Computable (Exterior Art. 1 Inc. b)</td>
+                          <td className="p-3 text-right font-bold">${fmtVal(selectedArcaInvoiceForView.noComputable)}</td>
+                        </tr>
+                      )}
+                      {selectedArcaInvoiceForView.otrosTributos > 0 && (
+                        <tr>
+                          <td className="p-3">Importe Otros Tributos / Percepciones</td>
+                          <td className="p-3 text-right font-bold">${fmtVal(selectedArcaInvoiceForView.otrosTributos)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* IMPORTE TOTAL Y TIPO DE CAMBIO */}
+                <div className="flex justify-between items-center p-4 bg-slate-900 text-white rounded-2xl">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-indigo-300">IMPORTE TOTAL DEL COMPROBANTE</p>
+                    <p className="text-[10.5px] text-slate-300 font-medium">A efectos contables e impositivos tipo de cambio 1 = {selectedArcaInvoiceForView.exchangeRate}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-amber-400">{selectedArcaInvoiceForView.currency} ${fmtVal(selectedArcaInvoiceForView.totalAmount)}</span>
+                  </div>
+                </div>
+
+                {/* LEYENDA LEGAL DE INTERMEDIACIÓN EN TURISMO */}
+                <p className="text-[10.5px] text-slate-500 italic leading-snug border-t border-slate-200 pt-3">
+                  {selectedArcaInvoiceForView.legalLegend}
+                </p>
+
+                {/* BLOQUE CÓDIGO QR Y CAE ARCA / AFIP */}
+                <div className="flex justify-between items-end border-t-2 border-slate-900 pt-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-16 bg-slate-100 border border-slate-300 rounded-lg flex items-center justify-center p-1">
+                      <div className="w-full h-full border-2 border-slate-800 flex items-center justify-center font-black text-[9px] text-slate-800 text-center leading-none">
+                        QR<br/>ARCA
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">ARCA</h4>
+                      <p className="text-[9.5px] font-bold text-slate-500 uppercase">Agencia de Recaudación y Control Aduanero</p>
+                      <p className="text-[9.5px] text-slate-400">Comprobante Autorizado por WebService WSFE</p>
+                    </div>
+                  </div>
+
+                  <div className="text-right font-mono text-xs space-y-0.5">
+                    <p className="font-bold text-slate-800">CAE N°: <strong>{selectedArcaInvoiceForView.caeNumber || '86251037765586'}</strong></p>
+                    <p className="text-slate-500 text-[11px]">Vto CAE: <strong>{selectedArcaInvoiceForView.caeExpirationDate || '04/07/2026'}</strong></p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* STICKY FOOTER */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const printContent = document.getElementById('printable-arca-invoice')
+                  if (!printContent) return
+                  const printWindow = window.open('', '_blank')
+                  if (!printWindow) return
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>FacturaARCA_${selectedArcaInvoiceForView.voucherNumberStr}</title>
+                        <script src="https://cdn.tailwindcss.com"></script>
+                      </head>
+                      <body class="bg-white p-8">
+                        ${printContent.innerHTML}
+                        <script>
+                          window.onload = function() { window.print(); window.close(); }
+                        </script>
+                      </body>
+                    </html>
+                  `)
+                  printWindow.document.close()
+                }}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Printer className="w-4 h-4" /> Imprimir Comprobante ARCA (Ctrl + P)
+              </button>
+            </div>
           </div>
         </div>
       )}

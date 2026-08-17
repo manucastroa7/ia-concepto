@@ -57,6 +57,9 @@ export class ManualQuote {
     @Column("jsonb", { default: [] })
     providerPayments!: any[];
 
+    @Column("jsonb", { default: [] })
+    invoices!: any[];
+
     @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
     globalAdjustment!: number;
 
