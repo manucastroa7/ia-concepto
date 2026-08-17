@@ -4,7 +4,7 @@ import axios from 'axios'
 import { 
   Search, Users, Sparkles, Settings, DollarSign, Shield, Globe, 
   Calculator, Wallet, Image, History, ChevronDown, ChevronRight,
-  TrendingUp, Megaphone, Briefcase, Sparkle, Database
+  TrendingUp, Megaphone, Briefcase, Sparkle, Database, LayoutDashboard
 } from 'lucide-react'
 import { TariffSearch } from './components/TariffSearch'
 import { AgencySettings } from './components/AgencySettings'
@@ -20,6 +20,7 @@ import { FlyerHistory } from './components/FlyerHistory'
 
 export type Tab = 
   | 'tariffs' 
+  | 'dashboard-comercial'
   | 'manual-quote' 
   | 'group-quotes' 
   | 'operators' 
@@ -50,6 +51,7 @@ const MENU_GROUPS: NavGroup[] = [
     category: 'Comercial & Cotizaciones',
     icon: Briefcase,
     items: [
+      { id: 'dashboard-comercial', label: 'Dashboard Comercial', description: 'Métricas e ingresos', icon: LayoutDashboard },
       { id: 'tariffs', label: 'Buscador de Ofertas', description: 'Tarifas y circuitos', icon: Search },
       { id: 'manual-quote', label: 'Cotizador Manual', description: 'Cotización personalizada', icon: Sparkles },
       { id: 'group-quotes', label: 'Cotizador de Grupos', description: 'Presupuesto contingentes', icon: Calculator },
@@ -265,7 +267,8 @@ export function App() {
         <main className="flex-1 w-full overflow-y-auto overflow-x-hidden px-4 py-4 md:px-6 md:py-6 lg:px-8 custom-scrollbar">
           <div className="w-full min-w-0 animate-in fade-in duration-300">
             {tab === 'tariffs' && <TariffSearch />}
-            {tab === 'manual-quote' && <ManualQuoteBuilder />}
+            {tab === 'dashboard-comercial' && <ManualQuoteBuilder initialViewMode="dashboard" />}
+            {tab === 'manual-quote' && <ManualQuoteBuilder initialViewMode="list" />}
             {tab === 'group-quotes' && <GroupQuoteManager />}
             {tab === 'sales' && <SalesTracker />}
             {tab === 'treasury' && <TreasuryManager />}

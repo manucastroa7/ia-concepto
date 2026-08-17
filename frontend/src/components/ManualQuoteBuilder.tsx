@@ -4,7 +4,7 @@ import {
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
-    AlertTriangle, CalendarDays, Printer, Share2, Download
+    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -382,8 +382,8 @@ interface QuoteState {
   status: 'draft' | 'sent' | 'follow_up' | 'reserved' | 'sold' | 'lost'
 }
 
-export function ManualQuoteBuilder() {
-  const [viewMode, setViewMode] = useState<'builder' | 'list' | 'calendar'>('list')
+export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMode?: 'dashboard' | 'list' | 'calendar' | 'builder' }) {
+  const [viewMode, setViewMode] = useState<'dashboard' | 'builder' | 'list' | 'calendar'>(initialViewMode)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
   const [quoteToDelete, setQuoteToDelete] = useState<any | null>(null)
@@ -1509,9 +1509,18 @@ export function ManualQuoteBuilder() {
 
   return (
     <div className="space-y-8 max-w-full overflow-x-hidden">
-      {/* SWITCH DE VISTA: HISTORIAL VS CALENDARIO VS COTIZADOR MAESTRO */}
+      {/* SWITCH DE VISTA: DASHBOARD VS HISTORIAL VS CALENDARIO VS COTIZADOR MAESTRO */}
       <div className="flex justify-between items-center flex-wrap gap-3">
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex-wrap gap-1">
+          <button
+            onClick={() => setViewMode('dashboard')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+              viewMode === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 text-white" /> Dashboard Comercial
+          </button>
+
           <button
             onClick={() => setViewMode('list')}
             className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
@@ -1544,16 +1553,21 @@ export function ManualQuoteBuilder() {
         </div>
       </div>
 
-      {/* VISTA 1: LISTADO MAESTRO DE COTIZACIONES */}
-      {viewMode === 'list' && (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+      {/* VISTA 0: DASHBOARD COMERCIAL DEDICADO */}
+      {viewMode === 'dashboard' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-8">
           <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
-            <div>
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Listado Maestro de Cotizaciones</h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Control centralizado de itinerarios, reservas y seguimiento comercial</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Dashboard Comercial & Flujo de Ingresos</h2>
+                <p className="text-xs text-slate-500 font-medium">Análisis ejecutivo de volumen cotizado, ingresos pendientes y tasa de conversión</p>
+              </div>
             </div>
             <button
-              onClick={resetQuote}
+              onClick={() => setViewMode('builder')}
               className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
             >
               <Plus className="w-4 h-4" /> Crear Nueva Cotización
@@ -1622,6 +1636,97 @@ export function ManualQuoteBuilder() {
                 <Clock className="w-5 h-5" />
               </div>
             </div>
+          </div>
+
+          {/* TABLA DE INGRESOS PENDIENTES A ENTRAR POR PASAJERO */}
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-emerald-600" /> Cobros Pendientes a Entrar (Saldos a Percibir por Cliente)
+              </h3>
+              <span className="text-[11px] font-bold text-slate-400">Total a Entrar: USD ${fmtVal(listKpis.pendingCollectionSum)}</span>
+            </div>
+
+            {historyQuotes.filter(q => q.status !== 'lost' && (
+              (() => {
+                let itemsList = q.items || []
+                if (typeof itemsList === 'string') { try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] } }
+                let sale = Number(q.soldPriceCollected) || 0
+                if (sale === 0 && itemsList.length > 0) itemsList.forEach((it: any) => sale += calculateItemEconomics(it).totalSale)
+                const collected = (q.payments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+                return sale - collected > 0
+              })()
+            )).length === 0 ? (
+              <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs text-slate-500 font-medium">
+                No hay saldos pendientes por cobrar en cotizaciones activas.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {historyQuotes.filter(q => q.status !== 'lost').map(q => {
+                  let itemsList = q.items || []
+                  if (typeof itemsList === 'string') { try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] } }
+                  let sale = Number(q.soldPriceCollected) || 0
+                  if (sale === 0 && itemsList.length > 0) itemsList.forEach((it: any) => sale += calculateItemEconomics(it).totalSale)
+                  const collected = (q.payments || []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+                  const pending = Math.max(0, sale - collected)
+                  if (pending <= 0) return null
+
+                  const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')
+
+                  return (
+                    <div key={q.id} className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-200/80 space-y-3 shadow-2xs">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-xs font-black text-slate-900 uppercase">{clientName}</p>
+                          <p className="text-[11px] font-semibold text-slate-600 truncate">{q.title || 'Cotización de Viaje'}</p>
+                        </div>
+                        <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                          {q.status}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-xs border-t border-emerald-100 pt-2">
+                        <div>
+                          <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total</p>
+                          <p className="font-bold text-slate-800">${fmtVal(sale)}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9.5px] font-bold text-emerald-600 uppercase">Pendiente a Entrar</p>
+                          <p className="font-black text-emerald-700 text-sm">+${fmtVal(pending)}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => handleLoadQuote(q)}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase rounded-xl transition-all cursor-pointer shadow-xs"
+                        >
+                          Ver Cotización
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VISTA 1: LISTADO MAESTRO DE COTIZACIONES */}
+      {viewMode === 'list' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Listado Maestro de Cotizaciones</h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Control centralizado de itinerarios, reservas y seguimiento comercial</p>
+            </div>
+            <button
+              onClick={resetQuote}
+              className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <Plus className="w-4 h-4" /> Crear Nueva Cotización
+            </button>
           </div>
 
           {/* BARRA DE BÚSQUEDA Y FILTROS TIPO PÍLDORA CON COLORES */}
@@ -4020,6 +4125,8 @@ export function ManualQuoteBuilder() {
             </div>
           </div>
         </div>
+      )}
+
       {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
       {showExportModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
