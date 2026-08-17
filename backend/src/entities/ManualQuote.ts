@@ -33,6 +33,9 @@ export class ManualQuote {
     @Column("text", { nullable: true })
     notes!: string;
 
+    @Column("text", { nullable: true })
+    clientRequestNotes!: string;
+
     @Column({ nullable: true })
     clientName!: string;
 

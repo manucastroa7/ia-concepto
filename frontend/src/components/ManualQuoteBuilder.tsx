@@ -4,7 +4,7 @@ import {
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
-    AlertTriangle, CalendarDays
+    AlertTriangle, CalendarDays, Printer, Share2, Download
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -378,14 +378,18 @@ interface QuoteState {
   providerPayments: Payment[]
   globalAdjustment: number
   notes: string
+  clientRequestNotes?: string
   status: 'draft' | 'sent' | 'follow_up' | 'reserved' | 'sold' | 'lost'
 }
 
 export function ManualQuoteBuilder() {
   const [viewMode, setViewMode] = useState<'builder' | 'list' | 'calendar'>('list')
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
   const [quoteToDelete, setQuoteToDelete] = useState<any | null>(null)
+
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportMode, setExportMode] = useState<'package_total' | 'detailed'>('package_total')
 
   const [quote, setQuote] = useState<QuoteState>({
     passengerId: '',
@@ -402,6 +406,7 @@ export function ManualQuoteBuilder() {
     providerPayments: [],
     globalAdjustment: 0,
     notes: '',
+    clientRequestNotes: '',
     status: 'draft'
   })
 
@@ -584,6 +589,7 @@ export function ManualQuoteBuilder() {
     let reservedCount = 0
     let soldCount = 0
     let draftCount = 0
+    let pendingCollectionSum = 0
 
     historyQuotes.forEach(q => {
       let itemsList = q.items || []
@@ -599,12 +605,17 @@ export function ManualQuoteBuilder() {
       }
       totalSaleSum += sale
 
+      const totalCollected = (q.payments || []).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+      if (q.status !== 'lost') {
+        pendingCollectionSum += Math.max(0, sale - totalCollected)
+      }
+
       if (q.status === 'reserved') reservedCount++
       else if (q.status === 'sold') soldCount++
       else if (q.status === 'draft') draftCount++
     })
 
-    return { totalSaleSum, reservedCount, soldCount, draftCount, totalCount: historyQuotes.length }
+    return { totalSaleSum, reservedCount, soldCount, draftCount, pendingCollectionSum, totalCount: historyQuotes.length }
   }, [historyQuotes])
 
   const handleCreateNewPassenger = async (e: React.FormEvent) => {
@@ -1452,6 +1463,7 @@ export function ManualQuoteBuilder() {
       providerPayments: [],
       globalAdjustment: 0,
       notes: '',
+      clientRequestNotes: '',
       status: 'draft'
     })
     setPassengerSearch('')
@@ -1481,6 +1493,7 @@ export function ManualQuoteBuilder() {
       providerPayments: Array.isArray(q.providerPayments) ? q.providerPayments : [],
       globalAdjustment: Number(q.globalAdjustment) || 0,
       notes: q.notes || '',
+      clientRequestNotes: q.clientRequestNotes || '',
       status: q.status || 'draft'
     })
     if (q.passenger) {
@@ -1548,57 +1561,70 @@ export function ManualQuoteBuilder() {
           </div>
 
           {/* DASHBOARD KPIS SUPERIORES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm flex items-center justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-gradient-to-br from-slate-800 to-indigo-900 text-white p-4 rounded-2xl shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Cotizaciones</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-300">Total Cotizaciones</p>
                 <p className="text-xl font-black mt-0.5">{listKpis.totalCount}</p>
-                <p className="text-[10.5px] text-orange-400 font-bold mt-1">USD ${fmtVal(listKpis.totalSaleSum)}</p>
+                <p className="text-[10.5px] text-amber-400 font-bold mt-1">USD ${fmtVal(listKpis.totalSaleSum)}</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-orange-400">
+              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-amber-400">
                 <FileText className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between">
+            <div className="bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reservas Confirmadas</p>
-                <p className="text-xl font-black text-purple-600 mt-0.5">{listKpis.reservedCount}</p>
-                <p className="text-[10px] text-slate-400 font-semibold mt-1">En proceso de seña / pago</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                  💰 Ingresos Pendientes
+                </p>
+                <p className="text-xl font-black text-emerald-700 mt-0.5">USD ${fmtVal(listKpis.pendingCollectionSum)}</p>
+                <p className="text-[10px] text-emerald-600 font-semibold mt-1">Por percibir de clientes</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 font-black">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 font-black">
+                <DollarSign className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">🟡 Reservas Confirmadas</p>
+                <p className="text-xl font-black text-amber-900 mt-0.5">{listKpis.reservedCount}</p>
+                <p className="text-[10px] text-amber-700 font-semibold mt-1">En proceso de seña / pago</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-800 font-black">
                 <Briefcase className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between">
+            <div className="bg-emerald-100/60 p-4 rounded-2xl border border-emerald-300 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Viajes Vendidos</p>
-                <p className="text-xl font-black text-emerald-600 mt-0.5">{listKpis.soldCount}</p>
-                <p className="text-[10px] text-slate-400 font-semibold mt-1">Operaciones cerradas</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">🟢 Viajes Vendidos</p>
+                <p className="text-xl font-black text-emerald-800 mt-0.5">{listKpis.soldCount}</p>
+                <p className="text-[10px] text-emerald-700 font-semibold mt-1">Operaciones cerradas</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-black">
+              <div className="w-10 h-10 rounded-xl bg-emerald-200/80 flex items-center justify-center text-emerald-800 font-black">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
 
             <div className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between transition-all ${
-              upcoming7DayDepartures.length > 0 ? 'bg-amber-50/80 border-amber-300' : 'bg-white border-slate-200/80'
+              upcoming7DayDepartures.length > 0 ? 'bg-amber-100/80 border-amber-300' : 'bg-white border-slate-200/80'
             }`}>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Salidas en 7 Días
                 </p>
                 <p className="text-xl font-black text-amber-900 mt-0.5">{upcoming7DayDepartures.length}</p>
                 <p className="text-[10px] text-amber-700 font-bold mt-1">Reconfirmación requerida</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center">
                 <Clock className="w-5 h-5" />
               </div>
             </div>
           </div>
 
-          {/* BARRA DE BÚSQUEDA Y FILTROS TIPO PÍLDORA */}
+          {/* BARRA DE BÚSQUEDA Y FILTROS TIPO PÍLDORA CON COLORES */}
           <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1621,19 +1647,20 @@ export function ManualQuoteBuilder() {
 
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
-                { id: 'all', label: 'Todos' },
-                { id: 'draft', label: '📄 Borradores' },
-                { id: 'reserved', label: '🟣 Reservas' },
-                { id: 'sold', label: '🟢 Vendidos' },
-                { id: 'follow_up', label: '⏳ Seguimiento' },
-                { id: 'lost', label: '🔴 Perdidos' }
+                { id: 'all', label: 'Todos', activeCls: 'bg-indigo-600 text-white shadow-2xs font-black' },
+                { id: 'draft', label: '⚪ Borradores', activeCls: 'bg-white text-slate-800 border-2 border-slate-400 font-black shadow-xs' },
+                { id: 'sent', label: '💛 Enviadas', activeCls: 'bg-amber-100 text-amber-900 border-2 border-amber-400 font-black shadow-xs' },
+                { id: 'reserved', label: '🟡 Reservas', activeCls: 'bg-amber-200 text-amber-950 border-2 border-amber-400 font-black shadow-xs' },
+                { id: 'sold', label: '🟢 Vendidos', activeCls: 'bg-emerald-200 text-emerald-950 border-2 border-emerald-400 font-black shadow-xs' },
+                { id: 'follow_up', label: '🔵 Seguimiento', activeCls: 'bg-blue-200 text-blue-950 border-2 border-blue-400 font-black shadow-xs' },
+                { id: 'lost', label: '🔴 Perdidos', activeCls: 'bg-red-200 text-red-950 border-2 border-red-400 font-black shadow-xs' }
               ].map(f => (
                 <button
                   key={f.id}
                   onClick={() => setStatusFilter(f.id as any)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     statusFilter === f.id
-                      ? 'bg-slate-900 text-white shadow-2xs font-black'
+                      ? f.activeCls
                       : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
@@ -1660,12 +1687,12 @@ export function ManualQuoteBuilder() {
                 }
 
                 const ST_CFG: any = {
-                  draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
-                  sent: { label: 'Enviada', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-                  follow_up: { label: 'Seguimiento', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-                  reserved: { label: 'Reserva', cls: 'bg-purple-50 text-purple-700 border-purple-200' },
-                  sold: { label: 'Vendido', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                  lost: { label: 'Perdido', cls: 'bg-rose-50 text-rose-700 border-rose-200' }
+                  draft: { label: 'Borrador', cls: 'bg-white text-slate-700 border-slate-300 shadow-2xs font-bold' },
+                  sent: { label: 'Cotización Enviada', cls: 'bg-amber-50 text-amber-800 border-amber-200 font-bold' },
+                  follow_up: { label: 'Seguimiento', cls: 'bg-blue-50 text-blue-800 border-blue-200 font-bold' },
+                  reserved: { label: 'Reserva', cls: 'bg-amber-100 text-amber-900 border-amber-300 font-black' },
+                  sold: { label: 'Vendido', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
+                  lost: { label: 'Perdido', cls: 'bg-red-100 text-red-800 border-red-300 font-bold' }
                 }
                 const st = ST_CFG[q.status] || ST_CFG.draft
                 const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero Titular')
@@ -1687,7 +1714,7 @@ export function ManualQuoteBuilder() {
                             {clientName}
                           </span>
                         </div>
-                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-xl border shrink-0 ${st.cls}`}>
+                        <span className={`text-[10px] uppercase px-2.5 py-1 rounded-xl border shrink-0 ${st.cls}`}>
                           {st.label}
                         </span>
                       </div>
@@ -1739,7 +1766,7 @@ export function ManualQuoteBuilder() {
 
                         <button 
                           onClick={() => handleLoadQuote(q)}
-                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase rounded-xl transition-all cursor-pointer shadow-xs"
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase rounded-xl transition-all cursor-pointer shadow-xs"
                           title="Editar Cotización"
                         >
                           Editar
@@ -1941,6 +1968,15 @@ export function ManualQuoteBuilder() {
                 ))}
               </div>
 
+              {/* EXPORT PDF BUTTON */}
+              <button
+                type="button"
+                onClick={() => setShowExportModal(true)}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <FileText className="w-4 h-4" /> Exportar PDF
+              </button>
+
               {/* CRM SAVE BUTTON */}
               <button
                 onClick={handleSaveCRM}
@@ -1956,12 +1992,12 @@ export function ManualQuoteBuilder() {
             <p className="text-[10.5px] font-black uppercase tracking-wider text-slate-400 mb-4">Estado de la Cotización / Pipeline Comercial</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
               {[
-                { id: 'draft', label: 'Borrador', icon: FileText, activeCls: 'bg-slate-900 text-white border-slate-900' },
-                { id: 'sent', label: 'Enviada', icon: Send, activeCls: 'bg-blue-600 text-white border-blue-600' },
-                { id: 'follow_up', label: 'Seguimiento', icon: Clock, activeCls: 'bg-amber-500 text-white border-amber-500' },
-                { id: 'reserved', label: 'Reserva', icon: ShieldCheck, activeCls: 'bg-purple-600 text-white border-purple-600' },
-                { id: 'sold', label: 'Vendido', icon: CheckCircle2, activeCls: 'bg-emerald-600 text-white border-emerald-600' },
-                { id: 'lost', label: 'Perdido', icon: XCircle, activeCls: 'bg-red-600 text-white border-red-600' }
+                { id: 'draft', label: '⚪ Borrador', icon: FileText, activeCls: 'bg-white text-slate-800 border-2 border-slate-400 font-black' },
+                { id: 'sent', label: '💛 Enviada', icon: Send, activeCls: 'bg-amber-100 text-amber-900 border-2 border-amber-400 font-black' },
+                { id: 'follow_up', label: '🔵 Seguimiento', icon: Clock, activeCls: 'bg-blue-200 text-blue-950 border-2 border-blue-400 font-black' },
+                { id: 'reserved', label: '🟡 Reserva', icon: ShieldCheck, activeCls: 'bg-amber-200 text-amber-950 border-2 border-amber-400 font-black' },
+                { id: 'sold', label: '🟢 Vendido', icon: CheckCircle2, activeCls: 'bg-emerald-200 text-emerald-950 border-2 border-emerald-400 font-black' },
+                { id: 'lost', label: '🔴 Perdido', icon: XCircle, activeCls: 'bg-red-200 text-red-950 border-2 border-red-400 font-black' }
               ].map(st => {
                 const isActive = quote.status === st.id;
                 return (
@@ -1978,6 +2014,22 @@ export function ManualQuoteBuilder() {
                 )
               })}
             </div>
+          </div>
+
+          {/* SOLICITUD INICIAL DEL CLIENTE / BRIEFING DEL VIAJE */}
+          <div className="bg-amber-50/60 p-5 rounded-3xl border border-amber-200/80 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase text-amber-900 tracking-wider flex items-center gap-2">
+                <Clipboard className="w-4 h-4 text-amber-600" /> Solicitud Inicial del Cliente / Briefing del Viaje
+              </h3>
+              <span className="text-[10px] font-bold text-amber-700">Puntapié inicial para armado del itinerario</span>
+            </div>
+            <textarea
+              value={quote.clientRequestNotes || ''}
+              onChange={e => setQuote(prev => ({ ...prev, clientRequestNotes: e.target.value }))}
+              placeholder="Volcá aquí el pedido original enviado por el pasajero (Ej: Matrimonio con 2 hijos solicitan paquete de 10 noches a Bariloche en julio con hotel 4 estrellas c/desayuno y excursión al Cerro Catedral)..."
+              className="w-full bg-white border border-amber-200 px-4 py-3 rounded-2xl text-xs font-semibold text-slate-800 outline-none focus:border-amber-500 transition-all min-h-[70px] resize-y"
+            />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
@@ -3964,6 +4016,194 @@ export function ManualQuoteBuilder() {
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-4xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
+            {/* HEADER DE EXPORTACIÓN */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-indigo-600" /> Exportar Cotización Comercial
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Seleccioná la modalidad de presentación para enviar o imprimir para el cliente</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* SELECTOR DE FORMATO */}
+                <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setExportMode('package_total')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      exportMode === 'package_total' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📦 Total Paquete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportMode('detailed')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      exportMode === 'detailed' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    📋 Desglose por Servicio
+                  </button>
+                </div>
+
+                <button onClick={() => setShowExportModal(false)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* DOCUMENTO DE COTIZACIÓN COMERCIAL IMPRIMIBLE VOUCHER */}
+            <div id="printable-quote-document" className="p-8 bg-white border border-slate-200 rounded-2xl space-y-6 shadow-xs font-sans text-slate-800">
+              
+              {/* CABECERA VOUCHER DE AGENCIA */}
+              <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
+                <div>
+                  <h1 className="text-2xl font-black uppercase text-slate-900 tracking-tight">CONCEPTO EVT</h1>
+                  <p className="text-xs font-bold text-slate-500">Empresa de Viajes y Turismo · Leg. 18291</p>
+                  <p className="text-xs text-slate-400">info@conceptoviajes.com.ar | www.conceptoviajes.com.ar</p>
+                </div>
+                <div className="text-right">
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-black uppercase rounded-lg border border-indigo-200 inline-block mb-1">
+                    COTIZACIÓN OFICIAL DE VIAJE
+                  </span>
+                  <p className="text-xs text-slate-500 font-medium">Fecha: <strong>{new Date().toLocaleDateString('es-AR')}</strong></p>
+                  <p className="text-xs text-slate-500 font-medium">Moneda: <strong>{quote.currency}</strong></p>
+                </div>
+              </div>
+
+              {/* DATOS DEL PASAJERO Y DETALLES DEL VIAJE */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <p className="font-bold text-slate-400 uppercase text-[10px]">Pasajero Principal</p>
+                  <p className="font-black text-slate-900 text-sm uppercase">{quote.passenger ? `${quote.passenger.surname}, ${quote.passenger.name}` : (quote.clientName || 'Cliente Particular')}</p>
+                  <p className="text-slate-600 font-medium">Pasajeros Totales: {quote.paxCount} pax</p>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-400 uppercase text-[10px]">Detalles del Itinerario</p>
+                  <p className="font-black text-slate-900 text-sm uppercase">{quote.title || 'Propuesta de Viaje'}</p>
+                  <p className="text-slate-600 font-medium">Destino: {quote.destination || 'Por definir'} {quote.startDate ? `| Fechas: ${fmtDate(quote.startDate)} al ${fmtDate(quote.endDate)}` : ''}</p>
+                </div>
+              </div>
+
+              {/* DETALLE DE SERVICIOS */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1">
+                  Resumen del Itinerario de Servicios
+                </h4>
+
+                {quote.items.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No hay servicios añadidos a la cotización aún.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {quote.items.map((item, idx) => {
+                      const eco = calculateItemEconomics(item)
+                      return (
+                        <div key={item.id} className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200 text-xs flex justify-between items-center gap-4">
+                          <div className="space-y-0.5 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-indigo-600 uppercase text-[11px]">{idx + 1}. [{item.type}]</span>
+                              <span className="font-black text-slate-900 uppercase">{item.title || 'Servicio de Viaje'}</span>
+                            </div>
+                            <p className="text-slate-600 font-medium text-[11px]">{item.description || 'Sin detalle adicional'}</p>
+                          </div>
+
+                          {exportMode === 'detailed' && (
+                            <div className="text-right shrink-0">
+                              <span className="font-black text-slate-900 text-sm">{quote.currency} ${fmtVal(eco.totalSale)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* RESUMEN FINANCIERO TOTAL */}
+              <div className="p-5 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-indigo-300">
+                    {exportMode === 'package_total' ? 'PRECIO TOTAL DEL PAQUETE DE VIAJE' : 'SUMA TOTAL DE SERVICIOS COTIZADOS'}
+                  </p>
+                  <p className="text-xs text-slate-300 font-medium">Incluye todos los ítems e impuestos del itinerario descripto.</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-black text-amber-400">{quote.currency} ${fmtVal(totals.totalSale)}</span>
+                </div>
+              </div>
+
+              {/* AVISO LEGAL / DISCLAIMER OBLIGATORIO */}
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-900 space-y-1">
+                <p className="font-black uppercase flex items-center gap-1.5 text-amber-950">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Condiciones Importantes de Cotización:
+                </p>
+                <p className="font-semibold text-amber-800 leading-snug">
+                  Todas las tarifas y servicios expresados en el presente presupuesto están estrictamente sujetos a disponibilidad al momento de solicitar la confirmación efectiva de la reserva y a posibles modificaciones de tarifa sin previo aviso.
+                </p>
+              </div>
+            </div>
+
+            {/* BOTONES DE ACCIÓN EXPORTAR */}
+            <div className="flex flex-wrap justify-between items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const printContent = document.getElementById('printable-quote-document')
+                  if (!printContent) return
+                  const printWindow = window.open('', '_blank')
+                  if (!printWindow) return
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Cotizacion_${quote.clientName || 'Cliente'}</title>
+                        <script src="https://cdn.tailwindcss.com"></script>
+                      </head>
+                      <body class="bg-white p-8">
+                        ${printContent.innerHTML}
+                        <script>
+                          window.onload = function() { window.print(); window.close(); }
+                        </script>
+                      </body>
+                    </html>
+                  `)
+                  printWindow.document.close()
+                }}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Printer className="w-4 h-4" /> Imprimir / Guardar en PDF (Ctrl + P)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  let txt = `*COTIZACIÓN DE VIAJE - CONCEPTO EVT*\n`
+                  txt += `*Pasajero:* ${quote.clientName || 'Cliente Particular'}\n`
+                  txt += `*Destino:* ${quote.destination || 'Por definir'}\n\n`
+                  txt += `*ITINERARIO DE SERVICIOS:*\n`
+                  quote.items.forEach((it, i) => {
+                    const eco = calculateItemEconomics(it)
+                    txt += `${i+1}. [${it.type.toUpperCase()}] ${it.title}`
+                    if (exportMode === 'detailed') txt += ` - ${quote.currency} $${fmtVal(eco.totalSale)}`
+                    txt += `\n`
+                  })
+                  txt += `\n*TOTAL DEL PAQUETE:* ${quote.currency} $${fmtVal(totals.totalSale)}\n\n`
+                  txt += `_Nota: Tarifas y servicios sujetos a disponibilidad al momento de confirmar la reserva y a cambios de tarifa sin previo aviso._`
+                  navigator.clipboard.writeText(txt)
+                  toast.success('Resumen de cotización copiado para WhatsApp')
+                }}
+                className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Share2 className="w-4 h-4" /> Copiar para WhatsApp
               </button>
             </div>
           </div>
