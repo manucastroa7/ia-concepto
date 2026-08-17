@@ -1891,7 +1891,7 @@ export function ManualQuoteBuilder() {
 
       {/* VISTA 3: FORMULARIO COTIZADOR MAESTRO */}
       {viewMode === 'builder' && (
-          
+        <div className="space-y-8">
           {/* HEADER DEL COTIZADOR */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div className="flex items-center gap-4">
