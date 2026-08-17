@@ -289,13 +289,12 @@ interface Baggage {
 interface ItemDetails {
   // Aéreos
   airline?: string
+  flightNumber?: string
   bookingCode?: string
   type?: 'ONE_WAY' | 'ROUND_TRIP' | 'MULTI'
   costDividerMode?: 'per_passenger' | 'divided_total'
   segments?: Segment[]
   baggage?: Baggage
-
-
 
   // Alojamiento
   hotelName?: string
@@ -322,7 +321,15 @@ interface ItemDetails {
   date?: string
   time?: string
 
-  // Otros
+  // Asistencia y Servicios
+  assistanceCompany?: string
+  documentNumber?: string
+  startDate?: string
+  endDate?: string
+  planType?: string
+  coverage?: string
+  route?: string
+  serviceName?: string
   description?: string
 }
 
@@ -347,6 +354,8 @@ interface Item {
   id: string
   type: 'flight' | 'hotel' | 'train' | 'transfer' | 'assistance' | 'service'
   providerId: string
+  title?: string
+  description?: string
   details: ItemDetails
   economics: ItemEconomics
   price?: number
@@ -4072,6 +4081,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs text-slate-600 font-medium">No hay comprobantes ARCA registrados para esta reserva aún.</p>
                 <p className="text-[11px] text-slate-400">Podés simular una Vista Previa Borrador o emitir la Factura Electrónica por el total del viaje.</p>
+              </div>
             ) : (
               <div className="space-y-3">
                 {quote.invoices.map((inv, invIdx) => (
