@@ -145,6 +145,10 @@ Responde SOLO con el mensaje de WhatsApp.`;
     return { whatsapp };
   }
 
+  async generateInstagramStoriesPlan(data: ExtractedFlyerData, agencyName: string, agencyPhone: string): Promise<InstagramStoriesPlan> {
+    return this.extractInstagramStoriesPlan(data, agencyName, agencyPhone);
+  }
+
   async extractInstagramStoriesPlan(data: ExtractedFlyerData, agencyName: string, agencyPhone: string): Promise<InstagramStoriesPlan> {
     const prompt = `Analiza este flyer de viajes ya estructurado y generame una estrategia de 3 historias para Instagram en JSON puro, sin markdown ni texto extra.
 
@@ -267,38 +271,252 @@ Si no se detecta algun campo, ponelo como null. Responde SOLO con el JSON valido
 
   async extractFlightTicketData(fileBuffer: Buffer, mimeType: string) {
     const base64 = fileBuffer.toString("base64");
-    const prompt = `Analiza esta imagen o captura de reserva de vuelo / e-ticket. Extrae la información aérea en formato JSON puro, sin bloques markdown:
+    const prompt = `Analiza esta imagen o captura de reserva de vuelo / e-ticket / pantalla de sistema GDS (Sabre, Amadeus, KIU, Worldspan, etc.). Extrae la información aérea en formato JSON puro, sin bloques markdown:
+
+REGLAS DE LECTURA DE SISTEMAS GDS Y TICKETES:
+1. NOMBRES DE PASAJEROS: Las líneas que contienen nombres de personas (ej: "1.MAYORGA/HORACIO MARCELO MR") corresponden al PASAJERO. ¡NUNCA uses el apellido o nombre de un pasajero como ciudad de origen ("from") ni destino ("to")!
+2. CÓDIGO PNR / LOCALIZADOR: Es un código alfanumérico de 6 caracteres (ejemplo: "CEWWVK"). Extraelo en "bookingCode".
+3. RUTA Y TRAMOS AÉREOS:
+   - En sistemas GDS o itinerarios, los tramos de IDA y VUELTA deben ser elementos SEPARADOS en la lista "segments".
+   - Ejemplo: Si el vuelo de ida es EZE -> MAD (ej: AR1132) y el de vuelta es MAD -> EZE (ej: AR1135), DEBEN SER 2 OBJETOS DISTINTOS en "segments". ¡NUNCA los fusiones en uno solo!
+   - "from" y "to" DEBEN SER SIEMPRE CÓDIGOS IATA DE 3 LETRAS DE AEROPUERTO (ej: EZE, MAD, ZRH, GRU, AEP) O CIUDADES. NUNCA NOMBRES DE PERSONAS.
+   - Ejemplo 1: "2 UX 042 P 08OCT 4 EZEMAD HK1 1210 0510 09OCT" -> Vuelo UX042 | Fecha: 08/10/2024 | Origen: EZE | Destino: MAD | Sale: 12:10 | Llega: 05:10 (09/10/2024).
+   - Ejemplo 2: "3 LX 092 W 25OCT 7*ZRHGRU HK1 2240 0640 26OCT" -> Vuelo LX092 | Fecha: 25/10/2024 | Origen: ZRH | Destino: GRU | Sale: 22:40 | Llega: 06:40 (26/10/2024).
+   - Ejemplo 3: "4 LX9760 W 26OCT 1*GRUAEP HK1 0905 1200 26OCT" -> Vuelo LX9760 | Fecha: 26/10/2024 | Origen: GRU | Destino: AEP | Sale: 09:05 | Llega: 12:00 (26/10/2024).
+
+FORMATO JSON DE SALIDA OBLIGATORIO:
 {
-  "airline": "Nombre de la aerolinea (ej: Iberia, Copa Airlines, LATAM)",
-  "bookingCode": "Codigo PNR o localizador de reserva de 6 caracteres",
+  "airline": "Nombre o código de la aerolínea principal (ej: Aerolineas Argentinas, Air Europa, Swiss)",
+  "bookingCode": "CEWWVK",
   "type": "ROUND_TRIP" o "ONE_WAY" o "MULTI",
   "segments": [
     {
       "id": "1",
-      "from": "Codigo IATA o ciudad de origen (ej: EZE, Buenos Aires)",
-      "to": "Codigo IATA o ciudad de destino (ej: MAD, Madrid)",
-      "flightNumber": "Numero de vuelo si figura (ej: IB6844)",
-      "departureDate": "Fecha de salida DD/MM/YYYY",
-      "departureTime": "Hora de salida HH:MM",
-      "arrivalDate": "Fecha de llegada DD/MM/YYYY",
-      "arrivalTime": "Hora de llegada HH:MM",
-      "stops": "Directo" o "1 Escala"
+      "from": "EZE",
+      "to": "MAD",
+      "flightNumber": "AR1132",
+      "departureDate": "20/07/2026",
+      "departureTime": "23:55",
+      "arrivalDate": "21/07/2026",
+      "arrivalTime": "17:10",
+      "stops": "Directo"
+    },
+    {
+      "id": "2",
+      "from": "MAD",
+      "to": "EZE",
+      "flightNumber": "AR1135",
+      "departureDate": "05/08/2026",
+      "departureTime": "10:55",
+      "arrivalDate": "05/08/2026",
+      "arrivalTime": "19:00",
+      "stops": "Directo"
     }
   ],
   "baggage": {
-    "hasHand": true/false,
-    "handDesc": "Mochila o bolso de mano",
-    "hasCarryOn": true/false,
+    "hasHand": true,
+    "handDesc": "Mochila",
+    "hasCarryOn": true,
     "carryOnDesc": "Equipaje de mano 10kg",
-    "hasChecked": true/false,
+    "hasChecked": true,
     "checkedDesc": "Equipaje en bodega 23kg"
   }
 }
-Si algun dato no esta presente, utiliza valores por defecto razonables. Responde SOLO con el JSON valido.`;
+
+REGLAS ESTRUCTURALES:
+- Fechas en formato DD/MM/YYYY. Horas en formato HH:MM.
+- "from" y "to" deben tener 3 letras IATA (ej: EZE, MAD, ZRH, GRU, AEP) y NUNCA nombres de pasajeros.
+- Cada tramo o vuelo individual (salida/regreso) debe ser un elemento separado en "segments".
+- Responde ÚNICAMENTE con el JSON válido.`;
 
     const raw = await this.callAI(prompt, base64, mimeType);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No se pudo extraer la reserva aérea");
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (Array.isArray(parsed.segments) && parsed.segments.length > 1) {
+      parsed.segments = mergeConnectingSegments(parsed.segments);
+    }
+
+    if (Array.isArray(parsed.segments)) {
+      if (parsed.segments.length === 1) {
+        parsed.type = parsed.type || "ONE_WAY";
+      } else if (parsed.segments.length === 2) {
+        const s1 = parsed.segments[0];
+        const s2 = parsed.segments[1];
+        if (s1.from && s1.to && s2.from && s2.to && 
+            s1.from.toUpperCase().trim() === s2.to.toUpperCase().trim() && 
+            s1.to.toUpperCase().trim() === s2.from.toUpperCase().trim()) {
+          parsed.type = "ROUND_TRIP";
+        } else {
+          parsed.type = "MULTI";
+        }
+      } else {
+        parsed.type = "MULTI";
+      }
+    }
+
+    return parsed;
+  }
+
+  async extractServiceVoucherData(fileBuffer: Buffer, mimeType: string) {
+    const base64 = fileBuffer.toString("base64");
+    const prompt = `Analiza esta imagen o captura de pantalla de voucher, confirmación de reserva, comprobante o pantalla de sistema de viajes (Traslado, Hotel, Tren, Excursión, Asistencia Médica, etc.). Extrae la información en formato JSON puro, sin bloques markdown:
+
+FORMATO JSON DE SALIDA OBLIGATORIO:
+{
+  "serviceType": "transfer" | "hotel" | "train" | "flight" | "assistance" | "service",
+  "origin": "Punto de salida u origen exacto (ej: Malaga-Maria Zambrano, Barajas, Madrid)",
+  "destination": "Punto de llegada o destino exacto (ej: Madrid-Puerta De Atocha, Petit Palace Preciados)",
+  "date": "Fecha del servicio en formato DD/MM/YYYY (ej: 03/08/2026)",
+  "departureDate": "Fecha de salida DD/MM/YYYY (ej: 03/08/2026)",
+  "checkIn": "Fecha check-in DD/MM/YYYY",
+  "checkOut": "Fecha check-out DD/MM/YYYY",
+  "time": "Hora del servicio o pickup en formato HH:MM (ej: 12:50)",
+  "departureTime": "Hora de salida en formato HH:MM (ej: 12:50)",
+  "arrivalTime": "Hora de llegada en formato HH:MM (ej: 15:49)",
+  "confirmationNumber": "Número de localizador o código de confirmación/ticket (ej: 3075761, REN-7749)",
+  "bookingCode": "Código de reserva, PNR o localizador (ej: REN-7749)",
+  "trainOperator": "Compañía u operador de tren (ej: Renfe, Eurostar, Iryo, Ouigo)",
+  "trainNumber": "Número de tren (ej: ave - 2133, AVE 0314)",
+  "classType": "Clase o información de asiento (ej: Preferente, Reserva de asiento incluida)",
+  "flightNumber": "Número de vuelo o tren de llegada/conexión si figura (ej: AR1132, 1132 - Aerolineas Argentinas)",
+  "providerName": "Nombre del proveedor, compañía o vendedor si figura (ej: Renfe, Mailen Fernandez)",
+  "assistanceCompany": "Compañía de asistencia médica (ej: Assist Card, Universal Assistance, Coris, Pax Assistance)",
+  "productName": "Nombre del producto o plan de asistencia (ej: AC 100, Master, AC 60)",
+  "coverageAmount": "Monto o límite de cobertura médica (ej: USD 100.000, EUR 30.000)",
+  "planType": "Modo o tipo de plan: 'Daily' (si la vigencia es por días/viaje) o 'Anual' (si la vigencia es de 365 días/1 año completo)",
+  "startDate": "Fecha de inicio de vigencia DD/MM/YYYY (ej: 20/07/2026)",
+  "endDate": "Fecha de fin de vigencia DD/MM/YYYY (ej: 05/08/2026)",
+  "documentNumber": "Número de documento de viaje, DNI o Pasaporte del asegurado (ej: 53583426)",
+  "price": 56.52,
+  "currency": "EUR" | "USD" | "ARS",
+  "description": "Cualquier nota adicional relevante (ej: AC 100 - Cobertura: USD 100.000)"
+}
+
+REGLAS STRICTAS:
+- Extrae con la mayor exactitud posible los nombres de lugares, fechas, horas y códigos de confirmación.
+- Si la imagen contiene un precio o tarifa (ej: EUR 56,52), extrae el número flotante en 'price' (56.52) y la moneda en 'currency'.
+- Si no está presente algún campo, usa null.
+- Responde ÚNICAMENTE con el JSON válido.`;
+
+    const raw = await this.callAI(prompt, base64, mimeType);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se pudo extraer la información del comprobante");
+
     return JSON.parse(jsonMatch[0]);
   }
+}
+
+function parseDateToTimestamp(dateStr?: string, timeStr?: string): number | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const cleanDate = dateStr.trim();
+  if (!cleanDate) return null;
+
+  let year = 0, month = 0, day = 0;
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const dmyMatch = cleanDate.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
+  if (dmyMatch) {
+    day = parseInt(dmyMatch[1], 10);
+    month = parseInt(dmyMatch[2], 10) - 1;
+    let yStr = dmyMatch[3];
+    if (yStr.length === 2) yStr = `20${yStr}`;
+    year = parseInt(yStr, 10);
+  } else {
+    // YYYY-MM-DD
+    const ymdMatch = cleanDate.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})$/);
+    if (ymdMatch) {
+      year = parseInt(ymdMatch[1], 10);
+      month = parseInt(ymdMatch[2], 10) - 1;
+      day = parseInt(ymdMatch[3], 10);
+    }
+  }
+
+  if (!year || month < 0 || month > 11 || day < 1 || day > 31) {
+    return null;
+  }
+
+  let hours = 12, minutes = 0;
+  if (timeStr && typeof timeStr === 'string') {
+    const timeMatch = timeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1], 10);
+      minutes = parseInt(timeMatch[2], 10);
+    }
+  }
+
+  return Date.UTC(year, month, day, hours, minutes);
+}
+
+function mergeConnectingSegments(segments: any[]): any[] {
+  if (!Array.isArray(segments) || segments.length <= 1) return segments;
+
+  const result: any[] = [];
+  let i = 0;
+
+  while (i < segments.length) {
+    let current = { ...segments[i] };
+    let stopsCount = 0;
+    const flightNumbers: string[] = [];
+    const layoverNotes: string[] = [];
+    const initialFrom = String(current.from || "").toUpperCase().trim();
+
+    if (current.flightNumber) flightNumbers.push(String(current.flightNumber).trim());
+
+    while (i + 1 < segments.length) {
+      const next = segments[i + 1];
+      const currentDest = String(current.to || "").toUpperCase().trim();
+      const nextOrigin = String(next.from || "").toUpperCase().trim();
+      const nextDest = String(next.to || "").toUpperCase().trim();
+
+      // Check if candidate for connection
+      if (currentDest && nextOrigin && currentDest === nextOrigin) {
+        // REGLA 1: Nunca fusionar si el vuelo de regreso vuelve al origen inicial (Ida y vuelta)
+        if (nextDest && initialFrom && nextDest === initialFrom) {
+          break;
+        }
+
+        // REGLA 2: Verificar tiempo entre la llegada (o salida) del vuelo actual y la salida del siguiente
+        const currentEndTs = parseDateToTimestamp(current.arrivalDate || current.departureDate, current.arrivalTime || current.departureTime);
+        const nextStartTs = parseDateToTimestamp(next.departureDate, next.departureTime);
+
+        if (currentEndTs !== null && nextStartTs !== null) {
+          const diffHours = (nextStartTs - currentEndTs) / (1000 * 60 * 60);
+          // Si el intervalo de tiempo entre vuelos es < 0 o > 30 horas, NO es una escala/conexión sino tramos separados
+          if (diffHours < 0 || diffHours > 30) {
+            break;
+          }
+        }
+
+        stopsCount++;
+        const arrTime = current.arrivalTime ? ` (Llegada ${current.arrivalTime}` : '';
+        const depTime = next.departureTime ? ` - Sale ${next.departureTime})` : (arrTime ? ')' : '');
+        layoverNotes.push(`Conexión en ${currentDest}${arrTime}${depTime}`);
+
+        if (next.flightNumber && !flightNumbers.includes(String(next.flightNumber).trim())) {
+          flightNumbers.push(String(next.flightNumber).trim());
+        }
+        current.to = next.to;
+        if (next.arrivalDate) current.arrivalDate = next.arrivalDate;
+        if (next.arrivalTime) current.arrivalTime = next.arrivalTime;
+        i++;
+      } else {
+        break;
+      }
+    }
+
+    if (stopsCount > 0) {
+      current.stops = stopsCount === 1 ? "1 Escala" : `${stopsCount} Escalas`;
+      current.layoverDetails = `${layoverNotes.join(' | ')} | Vuelos: ${flightNumbers.join(' + ')}`;
+    } else if (!current.stops) {
+      current.stops = "Directo";
+    }
+
+    current.flightNumber = flightNumbers.join(" / ");
+    result.push(current);
+    i++;
+  }
+
+  return result.map((seg, idx) => ({ ...seg, id: String(idx + 1) }));
 }

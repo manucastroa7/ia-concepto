@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { 
     Plus, Trash2, Plane, Hotel, Users, ShieldCheck, Send, Save, History, Search, 
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
-    Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt
+    Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -11,19 +11,67 @@ import { PassengerProfileModal } from './PassengerProfileModal'
 
 // --- COMPONENTES AUXILIARES ---
 
-function NumericInput({ value, onChange, className, placeholder }: { value: number, onChange: (val: number) => void, className?: string, placeholder?: string }) {
+function NumericInput({ 
+  value, 
+  onChange, 
+  className, 
+  placeholder 
+}: { 
+  value: number | undefined | null, 
+  onChange: (val: number) => void, 
+  className?: string, 
+  placeholder?: string 
+}) {
+  const [strValue, setStrValue] = useState<string>(value !== undefined && value !== null && value !== 0 ? String(value) : '')
+
+  useEffect(() => {
+    const currentParsed = parseFloat(strValue.replace(',', '.'))
+    if (value === 0 && strValue === '') return
+    if (isNaN(currentParsed) || currentParsed !== value) {
+      setStrValue(value !== undefined && value !== null && value !== 0 ? String(value) : '')
+    }
+  }, [value])
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value
+    raw = raw.replace(',', '.')
+    const clean = raw.replace(/[^0-9.]/g, '')
+    const parts = clean.split('.')
+    const formatted = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : clean
+
+    setStrValue(formatted)
+    if (formatted === '' || formatted === '.') {
+      onChange(0)
+    } else {
+      const parsed = parseFloat(formatted)
+      if (!isNaN(parsed)) {
+        onChange(parsed)
+      }
+    }
+  }
+
   return (
     <input 
       type="text"
-      value={value === 0 ? '' : value.toString()}
-      onChange={e => {
-        const val = e.target.value.replace(/[^0-9.]/g, '');
-        onChange(val === '' ? 0 : parseFloat(val));
+      value={strValue}
+      onChange={handleChange}
+      onBlur={() => {
+        if (strValue.endsWith('.')) {
+          const trimmed = strValue.slice(0, -1)
+          setStrValue(trimmed)
+        }
       }}
       className={className}
       placeholder={placeholder || "0"}
     />
   )
+}
+
+const fmtDate = (dStr?: string) => {
+  if (!dStr) return 'Sin fecha'
+  const match = dStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`
+  return dStr
 }
 
 function SearchableOperatorSelect({ 
@@ -52,7 +100,7 @@ function SearchableOperatorSelect({
     <div className="relative">
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-slate-800 text-xs font-bold flex justify-between items-center cursor-pointer hover:border-slate-300 transition-all"
+        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-slate-800 text-xs font-bold flex justify-between items-center cursor-pointer hover:border-slate-300 transition-all h-[42px]"
       >
         <span className={selectedOperator ? 'text-slate-900 font-black uppercase truncate' : 'text-slate-500 font-normal'}>
           {selectedOperator ? `🏢 ${selectedOperator.name}` : 'Seleccionar Operador / Proveedor...'}
@@ -217,6 +265,7 @@ interface Segment {
   arrivalDate: string
   arrivalTime: string
   stops?: string
+  layoverDetails?: string
 }
 
 interface Room {
@@ -368,7 +417,78 @@ export function ManualQuoteBuilder() {
   const [targetItemForOperator, setTargetItemForOperator] = useState<string | null>(null)
 
   const [isParsingFlight, setIsParsingFlight] = useState<string | null>(null)
+  const [isParsingService, setIsParsingService] = useState<string | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
+  const [expandedPayments, setExpandedPayments] = useState<Record<string, boolean>>({})
+
+  const togglePaymentExpanded = (pId: string) => {
+    setExpandedPayments(prev => ({
+      ...prev,
+      [pId]: prev[pId] === undefined ? false : !prev[pId]
+    }))
+  }
+
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved'>('idle')
+  const isFirstMount = useRef(true)
+
+  // Recuperar borrador sin guardar de localStorage al iniciar
+  useEffect(() => {
+    const savedDraft = localStorage.getItem('manual_quote_draft')
+    if (savedDraft && !quote.id) {
+      try {
+        const parsed = JSON.parse(savedDraft)
+        if (parsed && (parsed.items?.length > 0 || parsed.title || parsed.passengerId || parsed.destination)) {
+          setQuote(parsed)
+          if (parsed.passenger) {
+            setPassengerSearch(`${parsed.passenger.surname}, ${parsed.passenger.name}`)
+          }
+          toast.success('Borrador previo recuperado automáticamente', { icon: '💾' })
+        }
+      } catch (e) {
+        localStorage.removeItem('manual_quote_draft')
+      }
+    }
+  }, [])
+
+  // Autoguardado debounced (1.5s) en LocalStorage y Backend CRM
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false
+      return
+    }
+
+    const hasData = quote.id || quote.passengerId || quote.title || quote.destination || (quote.items && quote.items.length > 0)
+    if (!hasData) return
+
+    setAutoSaveStatus('unsaved')
+    const timer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving')
+        localStorage.setItem('manual_quote_draft', JSON.stringify(quote))
+
+        if (quote.id) {
+          await axios.patch(`/api/manual-quotes/${quote.id}`, quote)
+          fetchHistory()
+          setAutoSaveStatus('saved')
+        } else if (quote.passengerId || quote.title) {
+          const res = await axios.post('/api/manual-quotes', quote)
+          if (res.data?.id) {
+            setQuote(prev => ({ ...prev, id: res.data.id }))
+            fetchHistory()
+            setAutoSaveStatus('saved')
+          }
+        } else {
+          setAutoSaveStatus('saved')
+        }
+      } catch (err) {
+        console.error('Error en autoguardado:', err)
+        setAutoSaveStatus('saved')
+      }
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [quote])
 
   useEffect(() => {
     fetchOperators()
@@ -702,6 +822,250 @@ export function ManualQuoteBuilder() {
     }
   }
 
+  const handlePasteFromClipboard = async (itemId: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar la imagen capturada')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'clipboard-flight.png', { type: imageType })
+          toast.loading('Analizando imagen pegada del portapapeles...', { id: 'paste-flight' })
+          await handleParseFlightTicket(itemId, file)
+          toast.dismiss('paste-flight')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) e intentá de nuevo.')
+    } catch (err) {
+      toast.error('Presioná Ctrl + V sobre la sección del vuelo para pegar la imagen')
+    }
+  }
+
+  const handleParseServiceVoucher = async (itemId: string, file: File, serviceType: string) => {
+    setIsParsingService(itemId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await axios.post('/api/manual-quotes/parse-service-voucher', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const parsed = res.data
+      if (parsed) {
+        setQuote(prev => ({
+          ...prev,
+          items: prev.items.map(it => {
+            if (it.id === itemId) {
+              const updatedDetails = { ...it.details }
+              const updatedEconomics = { ...it.economics }
+
+              const formatInputDate = (dStr?: string) => {
+                if (!dStr || typeof dStr !== 'string') return undefined
+                const str = dStr.trim()
+                if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+
+                const numMatch = str.match(/(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})/)
+                if (numMatch) {
+                  const d = numMatch[1].padStart(2, '0')
+                  const m = numMatch[2].padStart(2, '0')
+                  let y = numMatch[3]
+                  if (y.length === 2) y = `20${y}`
+                  return `${y}-${m}-${d}`
+                }
+
+                const months: Record<string, string> = {
+                  ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06',
+                  jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12',
+                  jan: '01', apr: '04', aug: '08', dec: '12'
+                }
+                const textMatch = str.match(/(\d{1,2})\s*(?:de\s*)?([a-zA-Z]{3,10})\s*(?:de\s*)?(\d{2,4})/)
+                if (textMatch) {
+                  const d = textMatch[1].padStart(2, '0')
+                  const monthKey = textMatch[2].toLowerCase().slice(0, 3)
+                  const m = months[monthKey]
+                  let y = textMatch[3]
+                  if (y.length === 2) y = `20${y}`
+                  if (m) return `${y}-${m}-${d}`
+                }
+                return undefined
+              }
+
+              if (parsed.origin) updatedDetails.origin = parsed.origin
+              if (parsed.destination) updatedDetails.destination = parsed.destination
+
+              const conf = parsed.confirmationNumber || parsed.bookingCode
+              if (conf) {
+                updatedDetails.confirmationNumber = conf
+                updatedDetails.bookingCode = conf
+              }
+
+              const timeVal = parsed.departureTime || parsed.time
+              if (timeVal) {
+                updatedDetails.time = timeVal
+                updatedDetails.departureTime = timeVal
+              }
+              if (parsed.arrivalTime) {
+                updatedDetails.arrivalTime = parsed.arrivalTime
+              }
+
+              const dateVal = formatInputDate(parsed.departureDate || parsed.date || parsed.checkIn)
+              if (dateVal) {
+                updatedDetails.date = dateVal
+                updatedDetails.departureDate = dateVal
+                updatedDetails.checkIn = dateVal
+              }
+              if (parsed.checkOut) {
+                updatedDetails.checkOut = formatInputDate(parsed.checkOut)
+              }
+
+              if (parsed.trainOperator || parsed.providerName) {
+                updatedDetails.trainOperator = parsed.trainOperator || parsed.providerName
+              }
+              if (parsed.trainNumber || parsed.flightNumber) {
+                updatedDetails.trainNumber = parsed.trainNumber || parsed.flightNumber
+              }
+              if (parsed.classType || parsed.seats) {
+                updatedDetails.classType = parsed.classType || parsed.seats
+              }
+
+              if (parsed.flightNumber) updatedDetails.flightNumber = parsed.flightNumber
+              if (parsed.airline || parsed.providerName) updatedDetails.airline = parsed.airline || parsed.providerName
+              if (parsed.hotelName) updatedDetails.hotelName = parsed.hotelName
+
+              // Assistance & Insurance specific fields
+              if (parsed.assistanceCompany || (serviceType === 'assistance' && parsed.providerName)) {
+                updatedDetails.assistanceCompany = parsed.assistanceCompany || parsed.providerName
+              }
+              if (parsed.documentNumber) {
+                updatedDetails.documentNumber = parsed.documentNumber
+              }
+              if (parsed.startDate) {
+                const sDate = formatInputDate(parsed.startDate)
+                if (sDate) {
+                  updatedDetails.startDate = sDate
+                  updatedDetails.date = sDate
+                  updatedDetails.checkIn = sDate
+                }
+              }
+              if (parsed.endDate) {
+                const eDate = formatInputDate(parsed.endDate)
+                if (eDate) {
+                  updatedDetails.endDate = eDate
+                  updatedDetails.checkOut = eDate
+                }
+              }
+
+              // Auto-detect plan type (Daily vs Anual) based on dates or OCR
+              if (parsed.planType) {
+                updatedDetails.planType = parsed.planType
+              } else if (updatedDetails.startDate && updatedDetails.endDate) {
+                const start = new Date(updatedDetails.startDate)
+                const end = new Date(updatedDetails.endDate)
+                const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 3600 * 24))
+                updatedDetails.planType = diffDays >= 360 ? 'Anual' : 'Daily'
+              }
+
+              if (parsed.productName || parsed.coverageAmount) {
+                const pParts = []
+                if (parsed.productName) pParts.push(parsed.productName)
+                if (parsed.coverageAmount) pParts.push(`Cobertura: ${parsed.coverageAmount}`)
+                updatedDetails.description = pParts.join(' - ')
+              }
+
+              const notesParts = []
+              if (parsed.vehicleDetails) notesParts.push(parsed.vehicleDetails)
+              if (Array.isArray(parsed.passengers) && parsed.passengers.length > 0) {
+                notesParts.push(`Pasajeros: ${parsed.passengers.join(', ')}`)
+              }
+              if (parsed.description) notesParts.push(parsed.description)
+
+              if (notesParts.length > 0) {
+                const combinedNotes = notesParts.join(' | ')
+                if (it.type === 'service' || it.type === 'assistance') {
+                  updatedDetails.description = combinedNotes
+                }
+              }
+
+              if (parsed.price && typeof parsed.price === 'number' && parsed.price > 0) {
+                updatedEconomics.baseNetCost = parsed.price
+              }
+
+              return {
+                ...it,
+                details: updatedDetails,
+                economics: updatedEconomics
+              }
+            }
+            return it
+          })
+        }))
+        toast.success(`Comprobante de ${serviceType.toUpperCase()} procesado automáticamente con IA`)
+      }
+    } catch (e) {
+      toast.error('Error al analizar la imagen del comprobante')
+    } finally {
+      setIsParsingService(null)
+    }
+  }
+
+  const handlePasteVoucherFromClipboard = async (itemId: string, serviceType: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar la captura')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], `clipboard-${serviceType}.png`, { type: imageType })
+          toast.loading(`Analizando comprobante de ${serviceType.toUpperCase()}...`, { id: 'paste-service' })
+          await handleParseServiceVoucher(itemId, file, serviceType)
+          toast.dismiss('paste-service')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) e intentá de nuevo.')
+    } catch (err) {
+      toast.error('Presioná Ctrl + V sobre la sección para pegar la imagen')
+    }
+  }
+
+  // Listener global para capturar Ctrl+V en CUALQUIER servicio expandido (Aéreos, Traslados, Hoteles, Trenes, etc.)
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (!expandedItem) return
+      const targetItem = quote.items.find(it => it.id === expandedItem)
+      if (!targetItem) return
+
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile()
+          if (file) {
+            e.preventDefault()
+            toast.loading(`Analizando captura para ${targetItem.type.toUpperCase()} con IA...`, { id: 'ctrl-v-paste' })
+            if (targetItem.type === 'flight') {
+              handleParseFlightTicket(targetItem.id, file).finally(() => toast.dismiss('ctrl-v-paste'))
+            } else {
+              handleParseServiceVoucher(targetItem.id, file, targetItem.type).finally(() => toast.dismiss('ctrl-v-paste'))
+            }
+            return
+          }
+        }
+      }
+    }
+
+    window.addEventListener('paste', handleGlobalPaste)
+    return () => window.removeEventListener('paste', handleGlobalPaste)
+  }, [expandedItem, quote.items])
+
   const addFlightSegment = (itemId: string) => {
     setQuote(prev => ({
       ...prev,
@@ -805,6 +1169,13 @@ export function ManualQuoteBuilder() {
       method: 'transfer',
       reference: ''
     }
+    // Collapse all previous, expand newly created
+    setExpandedPayments(prev => {
+      const updated: Record<string, boolean> = {}
+      Object.keys(prev).forEach(k => { updated[k] = false })
+      updated[newP.id] = true
+      return updated
+    })
     setQuote(prev => ({ ...prev, [kind]: [...(prev[kind] || []), newP] }))
   }
 
@@ -978,6 +1349,7 @@ export function ManualQuoteBuilder() {
   }
 
   const resetQuote = () => {
+    localStorage.removeItem('manual_quote_draft')
     setQuote({
       passengerId: '',
       title: '',
@@ -995,6 +1367,7 @@ export function ManualQuoteBuilder() {
       status: 'draft'
     })
     setPassengerSearch('')
+    setAutoSaveStatus('idle')
     setViewMode('builder')
   }
 
@@ -1175,6 +1548,27 @@ export function ManualQuoteBuilder() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
+              {/* AUTOSAVE BADGE */}
+              {autoSaveStatus !== 'idle' && (
+                <div className="hidden sm:flex items-center">
+                  {autoSaveStatus === 'saving' && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 text-xs font-black rounded-xl border border-amber-200 shadow-2xs animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> Guardando...
+                    </span>
+                  )}
+                  {autoSaveStatus === 'saved' && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-200 shadow-2xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Autoguardado
+                    </span>
+                  )}
+                  {autoSaveStatus === 'unsaved' && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-500 text-xs font-bold rounded-xl border border-slate-200/80">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" /> Cambios pendientes
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* MONEDA SELECTOR */}
               <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
                 {(['USD', 'ARS', 'EUR'] as const).map(curr => (
@@ -1494,10 +1888,10 @@ export function ManualQuoteBuilder() {
                           <div className="p-6 bg-slate-50/70 border-t border-slate-100 space-y-6">
                             
                             {/* PROVEEDOR/OPERADOR ASOCIADO AL SERVICIO Y MODO DE COSTO */}
-                            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-2xs">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 items-end">
                                 <div>
-                                  <label className="text-[11px] font-black text-slate-900 uppercase tracking-wider block mb-1">
+                                  <label className="text-[11px] font-black text-slate-900 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">
                                     🏢 Operador / Proveedor del Servicio (Obligatorio)
                                   </label>
                                   <SearchableOperatorSelect
@@ -1515,13 +1909,13 @@ export function ManualQuoteBuilder() {
                                 </div>
 
                                 <div>
-                                  <label className="text-[11px] font-black text-slate-900 uppercase tracking-wider block mb-1">
+                                  <label className="text-[11px] font-black text-slate-900 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">
                                     📊 Modo de Cálculo / Costo del Servicio
                                   </label>
                                   <select
                                     value={item.details.costDividerMode || 'per_passenger'}
                                     onChange={e => updateItemDetails(item.id, 'costDividerMode', e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                   >
                                     <option value="per_passenger">Costo es Por Pasajero (multiplica x total de pax)</option>
                                     <option value="divided_total">Costo Total Fijo / Se divide entre los pax</option>
@@ -1534,31 +1928,66 @@ export function ManualQuoteBuilder() {
                             {item.type === 'flight' && (
                               <div className="space-y-5">
                                 
-                                {/* IA OCR SCANNER BUTTON */}
-                                <div className="bg-gradient-to-r from-sky-500 to-indigo-600 p-4 rounded-2xl text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs">
-                                      <Sparkles className="w-5 h-5 text-white" />
+                                {/* IA OCR SCANNER BANNER WITH PASTE & UPLOAD */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseFlightTicket(item.id, e.dataTransfer.files[0]);
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 overflow-hidden transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 ring-4 ring-orange-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-sky-500 to-indigo-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-4.5 h-4.5 text-white" />
                                     </div>
-                                    <div>
-                                      <p className="text-xs font-black uppercase tracking-wider">Lector Automático de Reserva Aérea (OCR)</p>
-                                      <p className="text-[11px] text-sky-100 font-medium">Subí un screenshot, ticket o PDF del vuelo para auto-completar los datos.</p>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                                        <span className="text-xs font-black uppercase tracking-wider text-white">
+                                          Lector Automático de Reserva Aérea (OCR)
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono tracking-normal font-bold shrink-0">PEGA CON CTRL+V</span>
+                                      </div>
+                                      <p className="text-[11px] text-sky-100 font-medium leading-tight truncate">
+                                        Pegá con <strong>Ctrl + V</strong>, arrastrá la captura o subí el archivo/PDF para auto-completar.
+                                      </p>
                                     </div>
                                   </div>
 
-                                  <label className="px-4 py-2 bg-white text-sky-900 hover:bg-sky-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-2 shrink-0">
-                                    <Upload className="w-4 h-4" /> {isParsingFlight === item.id ? 'Analizando...' : 'Subir Screenshot / Print Vuelo'}
-                                    <input
-                                      type="file"
-                                      accept="image/*,.pdf"
-                                      className="hidden"
-                                      onChange={e => {
-                                        if (e.target.files && e.target.files[0]) {
-                                          handleParseFlightTicket(item.id, e.target.files[0])
-                                        }
-                                      }}
-                                    />
-                                  </label>
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 w-full xl:w-auto">
+                                    {/* PASTE FROM CLIPBOARD BUTTON */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteFromClipboard(item.id)}
+                                      className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura de pantalla desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-slate-950" /> {isParsingFlight === item.id ? 'Analizando...' : 'Pegar Captura (Ctrl+V)'}
+                                    </button>
+
+                                    {/* UPLOAD FILE BUTTON */}
+                                    <label className="px-3.5 py-2 bg-white text-sky-900 hover:bg-sky-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> {isParsingFlight === item.id ? 'Analizando...' : 'Subir Archivo / PDF'}
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseFlightTicket(item.id, e.target.files[0])
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1916,91 +2345,165 @@ export function ManualQuoteBuilder() {
 
                             {/* TREN FORMULARIO COMPLETO */}
                             {item.type === 'train' && (
-                              <div className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs">
-                                <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
-                                  <Train className="w-4 h-4 text-orange-500" /> Detalles del Servicio de Tren
-                                </span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Operador / Empresa</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.trainOperator || ''}
-                                      onChange={e => updateItemDetails(item.id, 'trainOperator', e.target.value)}
-                                      placeholder="Ej: Renfe / Eurostar"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+                              <div className="space-y-5">
+                                {/* IA OCR SCANNER BANNER PARA TRENES */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseServiceVoucher(item.id, e.dataTransfer.files[0], 'train');
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 ring-4 ring-orange-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-amber-500 to-orange-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
+                                        Lector Automático de Ticket de Tren (OCR)
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono font-bold">PEGA CON CTRL+V</span>
+                                      </p>
+                                      <p className="text-[11px] text-amber-100 font-medium">
+                                        Pegá con <strong>Ctrl + V</strong>, arrastrá la captura o subí el billete para auto-completar operador, tren, fechas y horario.
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nº Tren</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.trainNumber || ''}
-                                      onChange={e => updateItemDetails(item.id, 'trainNumber', e.target.value)}
-                                      placeholder="Ej: AVE 0314"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold font-mono"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Código Reserva / Ticket</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.bookingCode || ''}
-                                      onChange={e => updateItemDetails(item.id, 'bookingCode', e.target.value)}
-                                      placeholder="Ej: REN-7749"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-mono font-bold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Clase / Asiento</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.classType || ''}
-                                      onChange={e => updateItemDetails(item.id, 'classType', e.target.value)}
-                                      placeholder="Ej: Preferente - Coche 4 As. 12"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                  <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteVoucherFromClipboard(item.id, 'train')}
+                                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-amber-400" /> {isParsingService === item.id ? 'Analizando...' : '📋 Pegar Captura (Ctrl+V)'}
+                                    </button>
+
+                                    <label className="px-3.5 py-2 bg-white text-orange-900 hover:bg-orange-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> {isParsingService === item.id ? 'Analizando...' : 'Subir Archivo'}
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseServiceVoucher(item.id, e.target.files[0], 'train')
+                                          }
+                                        }}
+                                      />
+                                    </label>
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Origen</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.origin || ''}
-                                      onChange={e => updateItemDetails(item.id, 'origin', e.target.value)}
-                                      placeholder="Ej: Madrid Atocha"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
+                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                                      <Train className="w-4.5 h-4.5 text-orange-500" /> Detalles del Servicio de Tren
+                                    </span>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Destino</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.destination || ''}
-                                      onChange={e => updateItemDetails(item.id, 'destination', e.target.value)}
-                                      placeholder="Ej: Barcelona Sants"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Operador / Empresa</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.trainOperator || ''}
+                                        onChange={e => updateItemDetails(item.id, 'trainOperator', e.target.value)}
+                                        placeholder="Ej: Renfe / Eurostar"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Nº Tren</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.trainNumber || ''}
+                                        onChange={e => updateItemDetails(item.id, 'trainNumber', e.target.value)}
+                                        placeholder="Ej: AVE 0314"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Código Reserva / Ticket</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.bookingCode || ''}
+                                        onChange={e => updateItemDetails(item.id, 'bookingCode', e.target.value)}
+                                        placeholder="Ej: REN-7749"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Clase / Asiento</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.classType || ''}
+                                        onChange={e => updateItemDetails(item.id, 'classType', e.target.value)}
+                                        placeholder="Ej: Preferente - Coche 4 As. 12"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Fecha Salida</label>
-                                    <input
-                                      type="date"
-                                      value={item.details.departureDate || ''}
-                                      onChange={e => updateItemDetails(item.id, 'departureDate', e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Hora Salida</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.departureTime || ''}
-                                      onChange={e => updateItemDetails(item.id, 'departureTime', e.target.value)}
-                                      placeholder="Ej: 09:30"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-100 items-end">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Origen</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.origin || ''}
+                                        onChange={e => updateItemDetails(item.id, 'origin', e.target.value)}
+                                        placeholder="Ej: Madrid Atocha"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Destino</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.destination || ''}
+                                        onChange={e => updateItemDetails(item.id, 'destination', e.target.value)}
+                                        placeholder="Ej: Barcelona Sants"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Fecha Salida</label>
+                                      <input
+                                        type="date"
+                                        value={item.details.departureDate || ''}
+                                        onChange={e => updateItemDetails(item.id, 'departureDate', e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Hora Salida</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.departureTime || ''}
+                                        onChange={e => updateItemDetails(item.id, 'departureTime', e.target.value)}
+                                        placeholder="Ej: 09:30"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Hora Llegada</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.arrivalTime || ''}
+                                        onChange={e => updateItemDetails(item.id, 'arrivalTime', e.target.value)}
+                                        placeholder="Ej: 15:49"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -2008,49 +2511,145 @@ export function ManualQuoteBuilder() {
 
                             {/* TRASLADO FORMULARIO COMPLETO */}
                             {item.type === 'transfer' && (
-                              <div className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs">
-                                <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
-                                  <MapPin className="w-4 h-4 text-orange-500" /> Detalles del Traslado
-                                </span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Origen (Punto de Salida)</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.origin || ''}
-                                      onChange={e => updateItemDetails(item.id, 'origin', e.target.value)}
-                                      placeholder="Ej: Aeropuerto FCO"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+                              <div className="space-y-4">
+                                {/* IA OCR SCANNER BANNER PARA TRASLADOS */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseServiceVoucher(item.id, e.dataTransfer.files[0], 'transfer');
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 ring-4 ring-orange-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-orange-500 to-amber-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
+                                        Lector Automático de Voucher de Traslado (OCR)
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono font-bold">PEGA CON CTRL+V</span>
+                                      </p>
+                                      <p className="text-[11px] text-amber-100 font-medium">
+                                        Pegá con <strong>Ctrl + V</strong>, arrastrá la captura o subí el comprobante para auto-completar datos y costo.
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Destino (Llegada)</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.destination || ''}
-                                      onChange={e => updateItemDetails(item.id, 'destination', e.target.value)}
-                                      placeholder="Ej: Hotel en Roma Centro"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                  <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteVoucherFromClipboard(item.id, 'transfer')}
+                                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura de voucher desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-amber-400" /> {isParsingService === item.id ? 'Analizando...' : '📋 Pegar Captura (Ctrl+V)'}
+                                    </button>
+
+                                    <label className="px-3.5 py-2 bg-white text-orange-900 hover:bg-orange-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> {isParsingService === item.id ? 'Analizando...' : 'Subir Archivo'}
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseServiceVoucher(item.id, e.target.files[0], 'transfer')
+                                          }
+                                        }}
+                                      />
+                                    </label>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Fecha del Servicio</label>
-                                    <input
-                                      type="date"
-                                      value={item.details.date || ''}
-                                      onChange={e => updateItemDetails(item.id, 'date', e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+                                </div>
+
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
+                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                                      <MapPin className="w-4.5 h-4.5 text-orange-500" /> Detalles del Traslado
+                                    </span>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Horario Pickup</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.time || ''}
-                                      onChange={e => updateItemDetails(item.id, 'time', e.target.value)}
-                                      placeholder="Ej: 14:00"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Origen (Punto de Salida)</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.origin || ''}
+                                        onChange={e => updateItemDetails(item.id, 'origin', e.target.value)}
+                                        placeholder="Ej: Barajas, Madrid (MAD-Barajas)"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Destino (Llegada)</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.destination || ''}
+                                        onChange={e => updateItemDetails(item.id, 'destination', e.target.value)}
+                                        placeholder="Ej: Petit Palace Preciados"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Fecha del Servicio</label>
+                                      <input
+                                        type="date"
+                                        value={item.details.date || ''}
+                                        onChange={e => updateItemDetails(item.id, 'date', e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Horario Pickup / Llegada</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.time || ''}
+                                        onChange={e => updateItemDetails(item.id, 'time', e.target.value)}
+                                        placeholder="Ej: 17:10"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Nº Vuelo / Tren de Llegada</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.flightNumber || ''}
+                                        onChange={e => updateItemDetails(item.id, 'flightNumber', e.target.value)}
+                                        placeholder="Ej: 1132 - Aerolineas Argentinas"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5 truncate">Nº Confirmación / Localizador</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.confirmationNumber || ''}
+                                        onChange={e => updateItemDetails(item.id, 'confirmationNumber', e.target.value)}
+                                        placeholder="Ej: 3075761"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-1 md:col-span-2">
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1.5 truncate">Vehículo / Pasajeros / Notas</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.description || ''}
+                                        onChange={e => updateItemDetails(item.id, 'description', e.target.value)}
+                                        placeholder="Ej: Comfort Car | Pasajeros: Luciana Cecilia Abadie, Esmeralda Abadie"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -2058,90 +2657,218 @@ export function ManualQuoteBuilder() {
 
                             {/* ASISTENCIA MÉDICA Y SERVICIOS ADICIONALES FORMULARIO COMPLETO */}
                             {(item.type === 'assistance' || item.type === 'service') && (
-                              <div className="space-y-4 bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs">
-                                <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
-                                  <ShieldCheck className="w-4 h-4 text-orange-500" /> Descripción y Cobertura del Servicio
-                                </span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Descripción / Producto</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.description || ''}
-                                      onChange={e => updateItemDetails(item.id, 'description', e.target.value)}
-                                      placeholder="Ej: Assist Card AC60 USD Cobertura Médica"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                    />
+                              <div className="space-y-5">
+                                {/* IA OCR SCANNER BANNER PARA ASISTENCIA MÉDICA */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseServiceVoucher(item.id, e.dataTransfer.files[0], 'assistance');
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 overflow-hidden transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-orange-500 to-amber-600 ring-4 ring-orange-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-emerald-600 to-teal-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-4.5 h-4.5 text-white" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                                        <span className="text-xs font-black uppercase tracking-wider text-white">
+                                          Lector Automático de Asistencia Médica (OCR)
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono font-bold shrink-0">PEGA CON CTRL+V</span>
+                                      </div>
+                                      <p className="text-[11px] text-emerald-100 font-medium leading-tight truncate">
+                                        Pegá con <strong>Ctrl + V</strong>, arrastrá la captura o subí el voucher (Assist Card, Universal, etc.) para auto-completar.
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nº Confirmación / Póliza</label>
-                                    <input
-                                      type="text"
-                                      value={item.details.confirmationNumber || ''}
-                                      onChange={e => updateItemDetails(item.id, 'confirmationNumber', e.target.value)}
-                                      placeholder="Ej: POL-882319"
-                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-mono font-bold"
-                                    />
+
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 w-full xl:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteVoucherFromClipboard(item.id, 'assistance')}
+                                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura de voucher desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-emerald-400" /> {isParsingService === item.id ? 'Analizando...' : 'Pegar Captura (Ctrl+V)'}
+                                    </button>
+
+                                    <label className="px-3.5 py-2 bg-white text-emerald-900 hover:bg-emerald-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> {isParsingService === item.id ? 'Analizando...' : 'Subir Archivo'}
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseServiceVoucher(item.id, e.target.files[0], 'assistance')
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
+                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                                      <ShieldCheck className="w-4.5 h-4.5 text-emerald-600" /> Descripción y Cobertura del Servicio
+                                    </span>
+                                    {(item.details.startDate || item.details.date) && (item.details.endDate || item.details.checkOut) && (
+                                      <span className="px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-2xs">
+                                        <Clock className="w-3.5 h-3.5 text-emerald-500" /> {calculateNights(item.details.startDate || item.details.date, item.details.endDate || item.details.checkOut)} Días de Cobertura
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Empresa / Compañía</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.assistanceCompany || ''}
+                                        onChange={e => updateItemDetails(item.id, 'assistanceCompany', e.target.value)}
+                                        placeholder="Ej: Assist Card / Universal Assistance"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Nº Póliza / Voucher / Nº Assist Card</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.confirmationNumber || ''}
+                                        onChange={e => updateItemDetails(item.id, 'confirmationNumber', e.target.value)}
+                                        placeholder="Ej: 540 25243905 05O RIC45"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Producto / Cobertura</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.description || ''}
+                                        onChange={e => updateItemDetails(item.id, 'description', e.target.value)}
+                                        placeholder="Ej: AC 100 - Cobertura USD 100.000"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Modalidad / Tipo de Plan</label>
+                                      <select
+                                        value={
+                                          item.details.planType ||
+                                          (item.details.startDate && item.details.endDate && Math.round((new Date(item.details.endDate).getTime() - new Date(item.details.startDate).getTime()) / (1000 * 3600 * 24)) >= 360 ? 'Anual' : 'Daily')
+                                        }
+                                        onChange={e => updateItemDetails(item.id, 'planType', e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      >
+                                        <option value="Daily">Daily (Por Días / Viaje)</option>
+                                        <option value="Anual">Anual (Multiviaje / 365 Días)</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-100 items-end">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Vigencia Desde (Inicio)</label>
+                                      <input
+                                        type="date"
+                                        value={item.details.startDate || item.details.date || ''}
+                                        onChange={e => {
+                                          updateItemDetails(item.id, 'startDate', e.target.value)
+                                          updateItemDetails(item.id, 'date', e.target.value)
+                                        }}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Vigencia Hasta (Fin)</label>
+                                      <input
+                                        type="date"
+                                        value={item.details.endDate || item.details.checkOut || ''}
+                                        onChange={e => {
+                                          updateItemDetails(item.id, 'endDate', e.target.value)
+                                          updateItemDetails(item.id, 'checkOut', e.target.value)
+                                        }}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Días de Cobertura Calculados</label>
+                                      <div className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black text-slate-700 flex items-center justify-between h-[42px]">
+                                        <span>{calculateNights(item.details.startDate || item.details.date, item.details.endDate || item.details.checkOut)} Días</span>
+                                        <Calendar className="w-4 h-4 text-emerald-500" />
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             )}
 
                             {/* PLANTILLA DETALLE DE RESERVA DE LA AGENCIA Y LÍNEAS DE GASTOS ADICIONALES */}
-                            <div className="bg-white p-5 rounded-2xl border border-slate-200/90 space-y-4 shadow-2xs">
+                            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 space-y-5 shadow-2xs">
                               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                                 <div>
                                   <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
-                                    <Receipt className="w-4 h-4 text-orange-500" /> Detalle de Reserva y Neto a Proveedor
+                                    <Receipt className="w-4.5 h-4.5 text-orange-500" /> Detalle de Reserva y Neto a Proveedor
                                   </h4>
                                   <p className="text-[11px] text-slate-500 font-semibold mt-0.5">El Valor Neto a Pagar es el importe exacto a liquidar a {provider ? provider.name : 'este proveedor'}.</p>
                                 </div>
-                                <span className="px-2.5 py-1 bg-orange-50 text-orange-600 font-black text-[10px] uppercase rounded-md">Calculadora Directa</span>
+                                <span className="px-2.5 py-1 bg-orange-50 text-orange-600 font-black text-[10px] uppercase rounded-md border border-orange-200/60">Calculadora Directa</span>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end">
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Total Comisionable</label>
+                                  <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Total Comisionable</label>
                                   <NumericInput
                                     value={item.economics.totalComisionable || 0}
                                     onChange={val => updateItemEconomics(item.id, 'totalComisionable', val)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-black text-slate-900"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-slate-900 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                     placeholder="216.65"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Comisión</label>
+                                  <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Comisión</label>
                                   <NumericInput
                                     value={item.economics.comision || 0}
                                     onChange={val => updateItemEconomics(item.id, 'comision', val)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-black text-emerald-600"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-emerald-600 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                     placeholder="28.16"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">IVA</label>
+                                  <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">IVA</label>
                                   <NumericInput
                                     value={item.economics.iva || 0}
                                     onChange={val => updateItemEconomics(item.id, 'iva', val)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold text-slate-800"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                     placeholder="2.67"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Gastos Adm.</label>
+                                  <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Gastos Adm.</label>
                                   <NumericInput
                                     value={item.economics.gastosAdm || 0}
                                     onChange={val => updateItemEconomics(item.id, 'gastosAdm', val)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold text-slate-800"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                     placeholder="1.89"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Suplementos</label>
+                                  <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Suplementos</label>
                                   <NumericInput
                                     value={item.economics.suplementos || 0}
                                     onChange={val => updateItemEconomics(item.id, 'suplementos', val)}
-                                    className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold text-slate-800"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
                                     placeholder="0.00"
                                   />
                                 </div>
@@ -2352,67 +3079,111 @@ export function ManualQuoteBuilder() {
                   {(quote.payments || []).length === 0 ? (
                     <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin cobros registrados aún.</p>
                   ) : (
-                    (quote.payments || []).map(p => (
-                      <div key={p.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Cobro</label>
-                            <input
-                              type="date"
-                              value={p.date}
-                              onChange={e => updatePayment('payments', p.id, 'date', e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Monto Cobrado</label>
-                            <input
-                              type="number"
-                              value={p.amount || ''}
-                              onChange={e => updatePayment('payments', p.id, 'amount', parseFloat(e.target.value) || 0)}
-                              placeholder="Ej: 500"
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-emerald-600"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Método de Pago</label>
-                            <select
-                              value={p.method || 'transfer'}
-                              onChange={e => updatePayment('payments', p.id, 'method', e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                            >
-                              <option value="transfer">Transferencia Bancaria</option>
-                              <option value="cash">Efectivo</option>
-                              <option value="card">Tarjeta de Crédito/Débito</option>
-                              <option value="mercadopago">Mercado Pago</option>
-                            </select>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">N° Comprobante / Ref</label>
-                              <input
-                                value={p.reference || ''}
-                                onChange={e => updatePayment('payments', p.id, 'reference', e.target.value)}
-                                placeholder="Ej: TRANSF-9921"
-                                className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                              />
+                    (quote.payments || []).map(p => {
+                      const isExp = expandedPayments[p.id] !== false
+                      return (
+                        <div key={p.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all">
+                          {/* BARRA RESUMEN COLAPSADA */}
+                          <div 
+                            onClick={() => togglePaymentExpanded(p.id)}
+                            className="p-3.5 bg-slate-50/80 hover:bg-slate-100 flex items-center justify-between gap-3 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs shrink-0">
+                                <DollarSign className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                <span className="font-bold text-slate-800 flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                  {fmtDate(p.date)}
+                                </span>
+                                <span className="text-slate-500 font-medium">
+                                  💳 {p.method === 'transfer' ? 'Transferencia' : p.method === 'cash' ? 'Efectivo' : p.method === 'card' ? 'Tarjeta' : 'Mercado Pago'}
+                                </span>
+                                {p.reference && (
+                                  <span className="font-mono text-[11px] bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-md font-bold">
+                                    Ref: {p.reference}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => removePayment('payments', p.id)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all self-end cursor-pointer"
-                              title="Eliminar registro"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-sm font-black text-emerald-600">
+                                +${fmtVal(p.amount)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  removePayment('payments', p.id)
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                title="Eliminar cobro"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExp ? 'rotate-180' : ''}`} />
+                            </div>
                           </div>
+
+                          {/* DETALLE EXPANDIBLE */}
+                          {isExp && (
+                            <div className="p-4 border-t border-slate-100 bg-white space-y-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Cobro</label>
+                                  <input
+                                    type="date"
+                                    value={p.date}
+                                    onChange={e => updatePayment('payments', p.id, 'date', e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Monto Cobrado</label>
+                                  <input
+                                    type="number"
+                                    value={p.amount || ''}
+                                    onChange={e => updatePayment('payments', p.id, 'amount', parseFloat(e.target.value) || 0)}
+                                    placeholder="Ej: 500"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-emerald-600"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Método de Pago</label>
+                                  <select
+                                    value={p.method || 'transfer'}
+                                    onChange={e => updatePayment('payments', p.id, 'method', e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                  >
+                                    <option value="transfer">Transferencia Bancaria</option>
+                                    <option value="cash">Efectivo</option>
+                                    <option value="card">Tarjeta de Crédito/Débito</option>
+                                    <option value="mercadopago">Mercado Pago</option>
+                                  </select>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <div className="flex-1">
+                                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">N° Comprobante / Ref</label>
+                                    <input
+                                      value={p.reference || ''}
+                                      onChange={e => updatePayment('payments', p.id, 'reference', e.target.value)}
+                                      placeholder="Ej: TRANSF-9921"
+                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -2455,105 +3226,152 @@ export function ManualQuoteBuilder() {
                   {(quote.providerPayments || []).length === 0 ? (
                     <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin pagos a proveedores registrados.</p>
                   ) : (
-                    (quote.providerPayments || []).map(p => (
-                      <div key={p.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Pago</label>
-                            <input
-                              type="date"
-                              value={p.date}
-                              onChange={e => updatePayment('providerPayments', p.id, 'date', e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Monto Pagado al Proveedor</label>
-                            <input
-                              type="number"
-                              value={p.amount || ''}
-                              onChange={e => updatePayment('providerPayments', p.id, 'amount', parseFloat(e.target.value) || 0)}
-                              placeholder="Ej: 300"
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-sky-600"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Proveedor Destino</label>
-                            <select
-                              value={p.providerId || ''}
-                              onChange={e => {
-                                const newOpId = e.target.value
-                                updatePayment('providerPayments', p.id, 'providerId', newOpId)
-                                // Auto sugiere el saldo pendiente de ese proveedor si el monto es 0
-                                if (newOpId && p.amount === 0 && providerSummaryMap[newOpId]) {
-                                  const pendingForOp = Math.max(0, providerSummaryMap[newOpId].totalNet - providerSummaryMap[newOpId].totalPaid)
-                                  if (pendingForOp > 0) {
-                                    updatePayment('providerPayments', p.id, 'amount', pendingForOp)
-                                  }
-                                }
-                              }}
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                            >
-                              {usedOperators.length === 0 ? (
-                                <option value="">-- Asigná proveedores a los servicios primero --</option>
-                              ) : (
-                                <>
-                                  <option value="">Seleccionar proveedor del viaje...</option>
-                                  {usedOperators.map(op => {
-                                    const opSummary = providerSummaryMap[op.id]
-                                    const opNet = opSummary ? opSummary.totalNet : 0
-                                    const pending = opSummary ? Math.max(0, opSummary.totalNet - opSummary.totalPaid) : 0
-                                    return (
-                                      <option key={op.id} value={op.id}>
-                                        🏢 {op.name} (Neto: ${fmtVal(opNet)} - Pendiente: ${fmtVal(pending)})
-                                      </option>
-                                    )
-                                  })}
-                                </>
-                              )}
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Forma de Pago al Proveedor</label>
-                            <select
-                              value={p.method || 'transfer'}
-                              onChange={e => updatePayment('providerPayments', p.id, 'method', e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                            >
-                              <option value="transfer">Transferencia Bancaria</option>
-                              <option value="cash">Efectivo</option>
-                              <option value="card">Tarjeta de Crédito Corporativa</option>
-                              <option value="mercadopago">Mercado Pago</option>
-                              <option value="account">Cuenta Corriente / Crédito</option>
-                            </select>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">N° Comprobante / Ref</label>
-                              <input
-                                value={p.reference || ''}
-                                onChange={e => updatePayment('providerPayments', p.id, 'reference', e.target.value)}
-                                placeholder="Ej: OP-8812"
-                                className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
-                              />
+                    (quote.providerPayments || []).map(p => {
+                      const isExp = expandedPayments[p.id] !== false
+                      const pProvider = operators.find(o => o.id === p.providerId)
+                      return (
+                        <div key={p.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all">
+                          {/* BARRA RESUMEN COLAPSADA */}
+                          <div 
+                            onClick={() => togglePaymentExpanded(p.id)}
+                            className="p-3.5 bg-slate-50/80 hover:bg-slate-100 flex items-center justify-between gap-3 cursor-pointer transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center font-black text-xs shrink-0">
+                                <Building2 className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                <span className="font-bold text-slate-800 flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                  {fmtDate(p.date)}
+                                </span>
+                                <span className="font-bold text-slate-800 truncate max-w-[140px] sm:max-w-[200px]">
+                                  🏢 {pProvider ? pProvider.name : 'Proveedor no asignado'}
+                                </span>
+                                <span className="text-slate-500 font-medium">
+                                  💳 {p.method === 'transfer' ? 'Transferencia' : p.method === 'cash' ? 'Efectivo' : p.method === 'card' ? 'Tarjeta' : p.method === 'mercadopago' ? 'Mercado Pago' : 'Cta Cte'}
+                                </span>
+                                {p.reference && (
+                                  <span className="font-mono text-[11px] bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-md font-bold">
+                                    Ref: {p.reference}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => removePayment('providerPayments', p.id)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all self-end cursor-pointer"
-                              title="Eliminar registro"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-sm font-black text-sky-600">
+                                ${fmtVal(p.amount)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  removePayment('providerPayments', p.id)
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                title="Eliminar pago"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExp ? 'rotate-180' : ''}`} />
+                            </div>
                           </div>
+
+                          {/* DETALLE EXPANDIBLE */}
+                          {isExp && (
+                            <div className="p-4 border-t border-slate-100 bg-white space-y-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Pago</label>
+                                  <input
+                                    type="date"
+                                    value={p.date}
+                                    onChange={e => updatePayment('providerPayments', p.id, 'date', e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Monto Pagado al Proveedor</label>
+                                  <input
+                                    type="number"
+                                    value={p.amount || ''}
+                                    onChange={e => updatePayment('providerPayments', p.id, 'amount', parseFloat(e.target.value) || 0)}
+                                    placeholder="Ej: 300"
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-black text-sky-600"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Proveedor Destino</label>
+                                  <select
+                                    value={p.providerId || ''}
+                                    onChange={e => {
+                                      const newOpId = e.target.value
+                                      updatePayment('providerPayments', p.id, 'providerId', newOpId)
+                                      if (newOpId && p.amount === 0 && providerSummaryMap[newOpId]) {
+                                        const pendingForOp = Math.max(0, providerSummaryMap[newOpId].totalNet - providerSummaryMap[newOpId].totalPaid)
+                                        if (pendingForOp > 0) {
+                                          updatePayment('providerPayments', p.id, 'amount', pendingForOp)
+                                        }
+                                      }
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800"
+                                  >
+                                    {usedOperators.length === 0 ? (
+                                      <option value="">-- Asigná proveedores a los servicios primero --</option>
+                                    ) : (
+                                      <>
+                                        <option value="">Seleccionar proveedor del viaje...</option>
+                                        {usedOperators.map(op => {
+                                          const opSummary = providerSummaryMap[op.id]
+                                          const opNet = opSummary ? opSummary.totalNet : 0
+                                          const pending = opSummary ? Math.max(0, opSummary.totalNet - opSummary.totalPaid) : 0
+                                          return (
+                                            <option key={op.id} value={op.id}>
+                                              🏢 {op.name} (Neto: ${fmtVal(opNet)} - Pendiente: ${fmtVal(pending)})
+                                            </option>
+                                          )
+                                        })}
+                                      </>
+                                    )}
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Forma de Pago al Proveedor</label>
+                                  <select
+                                    value={p.method || 'transfer'}
+                                    onChange={e => updatePayment('providerPayments', p.id, 'method', e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                  >
+                                    <option value="transfer">Transferencia Bancaria</option>
+                                    <option value="cash">Efectivo</option>
+                                    <option value="card">Tarjeta de Crédito Corporativa</option>
+                                    <option value="mercadopago">Mercado Pago</option>
+                                    <option value="account">Cuenta Corriente / Crédito</option>
+                                  </select>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <div className="flex-1">
+                                    <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">N° Comprobante / Ref</label>
+                                    <input
+                                      value={p.reference || ''}
+                                      onChange={e => updatePayment('providerPayments', p.id, 'reference', e.target.value)}
+                                      placeholder="Ej: OP-8812"
+                                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -2701,6 +3519,43 @@ export function ManualQuoteBuilder() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN ELIMINAR SERVICIO */}
+      {itemToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-500" /> Eliminar Servicio
+              </h3>
+              <button onClick={() => setItemToDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 font-medium">
+              ¿Estás seguro de que deseas eliminar este servicio de la cotización? Esta acción eliminará los costos y detalles del servicio.
+            </p>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveItem}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer"
+              >
+                Sí, Eliminar
+              </button>
+            </div>
           </div>
         </div>
       )}

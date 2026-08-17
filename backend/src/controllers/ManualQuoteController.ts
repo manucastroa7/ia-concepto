@@ -85,7 +85,9 @@ export class ManualQuoteController {
                     (f.details.segments || []).forEach((seg: any, idx: number) => {
                         const arrow = idx === 0 ? '🛫' : '🔄';
                         const dateInfo = seg.departureDate ? `[${seg.departureDate}] ` : '';
-                        text += `${arrow} ${dateInfo}${seg.from} ➔ ${seg.to} | ${seg.departureTime} - ${seg.arrivalTime}\n`;
+                        const stopsInfo = seg.stops && seg.stops !== 'Directo' ? ` (${seg.stops})` : '';
+                        text += `${arrow} ${dateInfo}${seg.from} ➔ ${seg.to}${stopsInfo} | ${seg.departureTime} - ${seg.arrivalTime}\n`;
+                        if (seg.layoverDetails) text += `   ↳ _${seg.layoverDetails}_\n`;
                     });
                     
                     const bg = f.details.baggage;
@@ -192,6 +194,19 @@ export class ManualQuoteController {
         } catch (error: any) {
             console.error("Error parsing flight ticket:", error);
             return res.status(500).json({ message: error.message || "Error al procesar la reserva aérea" });
+        }
+    }
+
+    static async parseServiceVoucher(req: Request, res: Response) {
+        try {
+            if (!req.file) return res.status(400).json({ message: "No se subió archivo o imagen" });
+            const { GeminiVisionService } = require("../services/GeminiVisionService");
+            const vision = new GeminiVisionService();
+            const result = await vision.extractServiceVoucherData(req.file.buffer, req.file.mimetype);
+            return res.json(result);
+        } catch (error: any) {
+            console.error("Error parsing service voucher:", error);
+            return res.status(500).json({ message: error.message || "Error al procesar el comprobante" });
         }
     }
 }
