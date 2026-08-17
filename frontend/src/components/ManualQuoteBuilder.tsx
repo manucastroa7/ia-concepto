@@ -4353,11 +4353,17 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                             )}
 
                             {/* DESCRIPCIÓN GENERAL DE OTROS SERVICIOS / EXCURSIONES */}
-                            {(item.description || d.description) && (
-                              <div className="pt-1 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70">
-                                <p className="font-medium text-[11px]">{item.description || d.description}</p>
-                              </div>
-                            )}
+                            {(() => {
+                              const desc = (item.description || d.description || '').trim()
+                              if (desc && desc.length > 1 && desc.toLowerCase() !== 'x') {
+                                return (
+                                  <div className="pt-1 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70">
+                                    <p className="font-medium text-[11px]">{desc}</p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            })()}
                           </div>
                         )
                       })}
