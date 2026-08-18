@@ -1456,8 +1456,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
       // Neto a Pagar a Proveedor = Total Comisionable - Comisión + IVA + Gastos Adm + Suplementos + Líneas de Gastos Adicionales
       netoAPagar = (Number(totalComisionable) - com + iv + gAdm + sup + sumCustomExpenses) * pCount
-      ganancia = Math.max(0, com - gAdm - sumCustomExpenses) * pCount
-      totalACobrar = (Number(totalComisionable) + sup) * pCount
+      totalACobrar = (Number(totalComisionable) + sup + iv + gAdm + sumCustomExpenses) * pCount
+      ganancia = (totalACobrar - netoAPagar)
     } else {
       let totalCost = baseNetCost + sumCustomExpenses
       let totalProfit = 0
