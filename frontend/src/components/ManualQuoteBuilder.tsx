@@ -407,6 +407,7 @@ interface Item {
   providerId: string
   title?: string
   description?: string
+  itemStatus?: 'pending' | 'in_progress' | 'confirmed' | 'cancelled'
   assignedPassengerIds?: string[]
   details: ItemDetails
   economics: ItemEconomics
@@ -2876,6 +2877,32 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                     <Calendar className="w-3 h-3" /> {itemDate}
                                   </span>
                                 )}
+
+                                <select
+                                  value={item.itemStatus || (item.details.bookingCode || item.details.confirmationNumber ? 'confirmed' : 'pending')}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={e => {
+                                    const st = e.target.value as any
+                                    setQuote(prev => ({
+                                      ...prev,
+                                      items: prev.items.map(it => it.id === item.id ? { ...it, itemStatus: st } : it)
+                                    }))
+                                  }}
+                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase border outline-none cursor-pointer transition-all shrink-0 ${
+                                    (item.itemStatus === 'confirmed' || (!item.itemStatus && (item.details.bookingCode || item.details.confirmationNumber)))
+                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+                                      : item.itemStatus === 'in_progress'
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                      : item.itemStatus === 'cancelled'
+                                      ? 'bg-red-100 text-red-900 border-red-300 hover:bg-red-200'
+                                      : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                                  }`}
+                                >
+                                  <option value="confirmed">🟢 Reservado (OK)</option>
+                                  <option value="in_progress">🟡 En Proceso</option>
+                                  <option value="pending">⚪ Cotizado / Pendiente</option>
+                                  <option value="cancelled">🔴 Cancelado</option>
+                                </select>
                               </div>
                               <p className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">
                                 Proveedor: <strong className={provider ? 'text-slate-900 font-black' : 'text-amber-600 font-bold'}>{provider ? provider.name : '⚠️ Sin Proveedor Asignado'}</strong> · Ref: <strong className="text-slate-800">{item.details.bookingCode || item.details.confirmationNumber || 'S/D'}</strong>
@@ -4108,6 +4135,30 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <Wallet className="w-4 h-4 text-orange-500" /> Resumen Financiero Total
                 </h3>
+
+                {/* ESTADO OPERATIVO DE SERVICIOS (CONFIRMADOS VS PENDIENTES) */}
+                {quote.items.length > 0 && (() => {
+                  const confirmedCount = quote.items.filter(it => 
+                    it.itemStatus === 'confirmed' || (!it.itemStatus && (it.details.bookingCode || it.details.confirmationNumber))
+                  ).length
+                  const pct = Math.round((confirmedCount / quote.items.length) * 100)
+                  return (
+                    <div className="bg-indigo-50/80 p-4 rounded-2xl border border-indigo-100 space-y-2">
+                      <div className="flex justify-between items-center text-xs font-black text-indigo-950 uppercase">
+                        <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-600" /> Servicios Reservados</span>
+                        <span className="text-emerald-700 font-mono">{confirmedCount} de {quote.items.length} ({pct}%)</span>
+                      </div>
+                      <div className="w-full bg-indigo-200/70 h-2 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-2 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[10.5px] font-medium text-indigo-800 leading-tight">
+                        {confirmedCount === quote.items.length 
+                          ? '🎉 Todos los servicios están reservados y confirmados OK.' 
+                          : `${quote.items.length - confirmedCount} servicio(s) pendiente(s) de reserva o voucher.`}
+                      </p>
+                    </div>
+                  )
+                })()}
 
                 <div className="space-y-4">
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
