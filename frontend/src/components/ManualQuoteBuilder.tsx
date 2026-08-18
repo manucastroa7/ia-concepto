@@ -4,7 +4,7 @@ import {
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
-    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard
+    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -1725,6 +1725,83 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     toast.success(`Factura de mayorista ${purchaseInvoiceForm.providerName} (${purchaseInvoiceForm.invoiceNumber}) registrada. Discriminación volcada a ARCA.`)
   }
 
+  const handleDuplicateItem = (itemId: string) => {
+    setQuote(prev => {
+      const idx = prev.items.findIndex(it => it.id === itemId)
+      if (idx === -1) return prev
+      const original = prev.items[idx]
+      const cloned: Item = JSON.parse(JSON.stringify(original))
+      cloned.id = Date.now().toString()
+
+      const newItems = [...prev.items]
+      newItems.splice(idx + 1, 0, cloned)
+
+      return {
+        ...prev,
+        items: newItems
+      }
+    })
+    toast.success('Servicio duplicado exitosamente')
+  }
+
+  const handleParseHotelText = (itemId: string, text: string) => {
+    if (!text) return
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    
+    let hotelName = ''
+    let confirmationNumber = ''
+    let checkIn = ''
+    let checkOut = ''
+    let roomType = ''
+    let board = ''
+
+    const confirmMatch = text.match(/(?:reserva|confirmaci[oó]n|voucher|pnr|ref|booking)[:\s]*([a-zA-Z0-9\--]+)/i)
+    if (confirmMatch) confirmationNumber = confirmMatch[1]
+
+    const dateMatches = text.match(/(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})/g)
+    if (dateMatches && dateMatches.length >= 2) {
+      checkIn = dateMatches[0]
+      checkOut = dateMatches[1]
+    }
+
+    const hotelKeywords = ['hotel', 'resort', 'palace', 'inn', 'suites', 'lodge', 'grand', 'plaza', 'posada', 'hostel', 'apart']
+    const foundLine = lines.find(l => hotelKeywords.some(k => l.toLowerCase().includes(k)))
+    if (foundLine) hotelName = foundLine.replace(/^(hotel|resort|alojamiento)[:\s]*/i, '')
+
+    if (text.toLowerCase().includes('all inclusive') || text.toLowerCase().includes('todo incluido')) board = 'All Inclusive'
+    else if (text.toLowerCase().includes('media pension') || text.toLowerCase().includes('half board')) board = 'Media Pensión'
+    else if (text.toLowerCase().includes('desayuno') || text.toLowerCase().includes('breakfast')) board = 'Desayuno Incluido'
+
+    if (text.toLowerCase().includes('doble')) roomType = 'Doble Standard'
+    else if (text.toLowerCase().includes('suite')) roomType = 'Suite'
+    else if (text.toLowerCase().includes('single')) roomType = 'Single'
+
+    setQuote(prev => ({
+      ...prev,
+      items: prev.items.map(it => {
+        if (it.id !== itemId) return it
+        const newDetails = { ...it.details }
+        if (hotelName) newDetails.hotelName = hotelName
+        if (confirmationNumber) newDetails.confirmationNumber = confirmationNumber
+        if (checkIn) newDetails.checkIn = checkIn
+        if (checkOut) newDetails.checkOut = checkOut
+        if (roomType || board) {
+          newDetails.rooms = [
+            {
+              id: Date.now().toString(),
+              type: roomType || 'Standard',
+              board: board || 'Desayuno Incluido',
+              paxCount: 2
+            }
+          ]
+        }
+        return { ...it, details: newDetails }
+      })
+    }))
+
+    toast.success('Datos del hotel extraídos y autocompletados')
+  }
+
   const handleSaveCRM = async () => {
     if (!quote.passengerId && !quote.title) {
       toast.error('Seleccioná un cliente o ingresá un título para la cotización')
@@ -2693,9 +2770,21 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                handleDuplicateItem(item.id);
+                              }}
+                              className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all cursor-pointer"
+                              title="Duplicar servicio / Copiar ítem"
+                            >
+                              <Copy className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 removeItem(item.id);
                               }}
                               className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all cursor-pointer"
+                              title="Eliminar servicio"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -3056,6 +3145,44 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                             {/* ALOJAMIENTO FORMULARIO COMPLETO */}
                             {item.type === 'hotel' && (
                               <div className="space-y-5">
+
+                                {/* IA OCR / PEGAR CONFIRMACIÓN DE HOTEL */}
+                                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-4.5 h-4.5 text-white" />
+                                    </div>
+                                    <div>
+                                      <h5 className="text-xs font-black uppercase text-white tracking-wider flex items-center gap-2">
+                                        Lector Automático de Reserva de Hotel (IA)
+                                      </h5>
+                                      <p className="text-[11px] text-teal-100 font-medium mt-0.5">
+                                        Pegá el email, voucher o texto de confirmación del hotel para autocompletar.
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        const text = await navigator.clipboard.readText()
+                                        if (!text) {
+                                          toast.error('No se encontró texto en el portapapeles')
+                                          return
+                                        }
+                                        handleParseHotelText(item.id, text)
+                                      } catch {
+                                        toast.error('Permití el acceso al portapapeles o pegá el texto')
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                    title="Pegar voucher o email del hotel desde el portapapeles (Ctrl + V)"
+                                  >
+                                    <Clipboard className="w-4 h-4 text-slate-950" /> Pegar Texto Hotel (Ctrl+V)
+                                  </button>
+                                </div>
+
                                 {/* DATOS DEL HOTEL Y NOCHES CALCULADAS */}
                                 <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
                                   <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100">
