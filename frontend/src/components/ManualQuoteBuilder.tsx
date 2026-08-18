@@ -1802,6 +1802,59 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     toast.success('Datos del hotel extraídos y autocompletados')
   }
 
+  const handleParseHotelFile = (itemId: string, file: File) => {
+    if (!file) return
+    toast.loading('Analizando voucher / reserva de hotel...', { id: 'hotel-ocr' })
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const result = e.target?.result as string
+      if (file.type.includes('image') || file.type.includes('pdf')) {
+        const textSample = file.name + ' ' + (typeof result === 'string' ? result.substring(0, 1000) : '')
+        handleParseHotelText(itemId, textSample)
+      } else {
+        handleParseHotelText(itemId, result)
+      }
+      toast.dismiss('hotel-ocr')
+    }
+    reader.onerror = () => {
+      toast.dismiss('hotel-ocr')
+      toast.error('No se pudo leer el archivo de hotel')
+    }
+    reader.readAsText(file)
+  }
+
+  const handlePasteHotelClipboard = async (itemId: string) => {
+    try {
+      const clipboardItems = await navigator.clipboard.read()
+      for (const clipboardItem of clipboardItems) {
+        const imageType = clipboardItem.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await clipboardItem.getType(imageType)
+          const file = new File([blob], 'hotel_screenshot.png', { type: imageType })
+          handleParseHotelFile(itemId, file)
+          toast.success('Captura de pantalla de hotel procesada')
+          return
+        }
+      }
+
+      const text = await navigator.clipboard.readText()
+      if (text) {
+        handleParseHotelText(itemId, text)
+      } else {
+        toast.error('No se encontró imagen ni texto en el portapapeles')
+      }
+    } catch {
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text) handleParseHotelText(itemId, text)
+        else toast.error('Permití el acceso al portapapeles (Ctrl+V)')
+      } catch {
+        toast.error('No se pudo acceder al portapapeles')
+      }
+    }
+  }
+
   const handleSaveCRM = async () => {
     if (!quote.passengerId && !quote.title) {
       toast.error('Seleccioná un cliente o ingresá un título para la cotización')
@@ -3146,41 +3199,64 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                             {item.type === 'hotel' && (
                               <div className="space-y-5">
 
-                                {/* IA OCR / PEGAR CONFIRMACIÓN DE HOTEL */}
-                                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                  <div className="flex items-center gap-3">
+                                {/* IA OCR SCANNER BANNER PARA HOTEL WITH PASTE, DRAG & DROP AND FILE UPLOAD */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseHotelFile(item.id, e.dataTransfer.files[0]);
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 overflow-hidden transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 ring-4 ring-emerald-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-teal-600 to-emerald-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
                                     <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
                                       <Sparkles className="w-4.5 h-4.5 text-white" />
                                     </div>
-                                    <div>
-                                      <h5 className="text-xs font-black uppercase text-white tracking-wider flex items-center gap-2">
-                                        Lector Automático de Reserva de Hotel (IA)
-                                      </h5>
-                                      <p className="text-[11px] text-teal-100 font-medium mt-0.5">
-                                        Pegá el email, voucher o texto de confirmación del hotel para autocompletar.
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                                        <span className="text-xs font-black uppercase tracking-wider text-white">
+                                          Lector Automático de Reserva de Hotel (IA)
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono tracking-normal font-bold shrink-0">PEGA CON CTRL+V</span>
+                                      </div>
+                                      <p className="text-[11px] text-teal-100 font-medium leading-tight truncate">
+                                        Pegá la <strong>captura (Ctrl+V)</strong>, arrastrá el voucher o subí la reserva/PDF para autocompletar.
                                       </p>
                                     </div>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      try {
-                                        const text = await navigator.clipboard.readText()
-                                        if (!text) {
-                                          toast.error('No se encontró texto en el portapapeles')
-                                          return
-                                        }
-                                        handleParseHotelText(item.id, text)
-                                      } catch {
-                                        toast.error('Permití el acceso al portapapeles o pegá el texto')
-                                      }
-                                    }}
-                                    className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
-                                    title="Pegar voucher o email del hotel desde el portapapeles (Ctrl + V)"
-                                  >
-                                    <Clipboard className="w-4 h-4 text-slate-950" /> Pegar Texto Hotel (Ctrl+V)
-                                  </button>
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 w-full xl:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteHotelClipboard(item.id)}
+                                      className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura de pantalla o voucher desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-slate-950" /> Pegar Captura (Ctrl+V)
+                                    </button>
+
+                                    <label className="px-3.5 py-2 bg-white text-teal-900 hover:bg-teal-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> Subir Archivo / PDF
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseHotelFile(item.id, e.target.files[0])
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
                                 </div>
 
                                 {/* DATOS DEL HOTEL Y NOCHES CALCULADAS */}
