@@ -1765,7 +1765,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     }
 
     const hotelKeywords = ['hotel', 'resort', 'palace', 'inn', 'suites', 'lodge', 'grand', 'plaza', 'posada', 'hostel', 'apart']
-    const foundLine = lines.find(l => hotelKeywords.some(k => l.toLowerCase().includes(k)))
+    const foundLine = lines.find(l => hotelKeywords.some(k => l.toLowerCase().includes(k)) && !l.includes('.png') && !l.includes('.jpg') && !l.includes('.pdf') && !l.includes('PNG'))
     if (foundLine) hotelName = foundLine.replace(/^(hotel|resort|alojamiento)[:\s]*/i, '')
 
     if (text.toLowerCase().includes('all inclusive') || text.toLowerCase().includes('todo incluido')) board = 'All Inclusive'
@@ -1781,7 +1781,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       items: prev.items.map(it => {
         if (it.id !== itemId) return it
         const newDetails = { ...it.details }
-        if (hotelName) newDetails.hotelName = hotelName
+        if (hotelName && !hotelName.includes('.png') && !hotelName.includes('PNG')) newDetails.hotelName = hotelName
         if (confirmationNumber) newDetails.confirmationNumber = confirmationNumber
         if (checkIn) newDetails.checkIn = checkIn
         if (checkOut) newDetails.checkOut = checkOut
@@ -1802,18 +1802,50 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     toast.success('Datos del hotel extraídos y autocompletados')
   }
 
-  const handleParseHotelFile = (itemId: string, file: File) => {
+  const handleParseHotelFile = async (itemId: string, file: File) => {
     if (!file) return
-    toast.loading('Analizando voucher / reserva de hotel...', { id: 'hotel-ocr' })
+    toast.loading('Analizando voucher / reserva de hotel con IA...', { id: 'hotel-ocr' })
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await axios.post('/api/manual-quotes/parse-service-voucher', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+
+      if (res.data) {
+        const data = res.data
+        setQuote(prev => ({
+          ...prev,
+          items: prev.items.map(it => {
+            if (it.id !== itemId) return it
+            const newDetails = { ...it.details }
+            const hName = data.destination || data.origin || data.providerName
+            if (hName && !hName.includes('.png') && !hName.includes('PNG')) {
+              newDetails.hotelName = hName
+            }
+            if (data.confirmationNumber || data.bookingCode) newDetails.confirmationNumber = data.confirmationNumber || data.bookingCode
+            if (data.checkIn || data.date || data.startDate) newDetails.checkIn = data.checkIn || data.date || data.startDate
+            if (data.checkOut || data.endDate) newDetails.checkOut = data.checkOut || data.endDate
+            return { ...it, details: newDetails }
+          })
+        }))
+        toast.dismiss('hotel-ocr')
+        toast.success('Reserva de hotel procesada con IA exitosamente')
+        return
+      }
+    } catch (err) {
+      console.warn('Fallback a extractor local de hotel...', err)
+    }
 
     const reader = new FileReader()
     reader.onload = (e) => {
       const result = e.target?.result as string
       if (file.type.includes('image') || file.type.includes('pdf')) {
-        const textSample = file.name + ' ' + (typeof result === 'string' ? result.substring(0, 1000) : '')
-        handleParseHotelText(itemId, textSample)
+        handleParseHotelText(itemId, result || '')
       } else {
-        handleParseHotelText(itemId, result)
+        handleParseHotelText(itemId, result || '')
       }
       toast.dismiss('hotel-ocr')
     }
