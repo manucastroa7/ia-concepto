@@ -75,6 +75,40 @@ const fmtDate = (dStr?: string) => {
   return dStr
 }
 
+const formatToInputDate = (dateStr?: string | null): string => {
+  if (!dateStr || typeof dateStr !== 'string') return ''
+  const clean = dateStr.trim()
+  if (!clean) return ''
+  
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean
+
+  const dmyMatch = clean.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/)
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, '0')
+    const month = dmyMatch[2].padStart(2, '0')
+    let year = dmyMatch[3]
+    if (year.length === 2) year = parseInt(year, 10) > 45 ? `19${year}` : `20${year}`
+    return `${year}-${month}-${day}`
+  }
+
+  return ''
+}
+
+const calculateNights = (checkIn?: string, checkOut?: string): number => {
+  if (!checkIn || !checkOut) return 0
+  const d1Str = formatToInputDate(checkIn) || checkIn
+  const d2Str = formatToInputDate(checkOut) || checkOut
+  
+  const d1 = new Date(d1Str)
+  const d2 = new Date(d2Str)
+  
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0
+  
+  const diffTime = d2.getTime() - d1.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays > 0 ? diffDays : 0
+}
+
 function SearchableOperatorSelect({ 
   value, 
   onChange, 
@@ -1783,8 +1817,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
         const newDetails = { ...it.details }
         if (hotelName && !hotelName.includes('.png') && !hotelName.includes('PNG')) newDetails.hotelName = hotelName
         if (confirmationNumber) newDetails.confirmationNumber = confirmationNumber
-        if (checkIn) newDetails.checkIn = checkIn
-        if (checkOut) newDetails.checkOut = checkOut
+        if (checkIn) newDetails.checkIn = formatToInputDate(checkIn) || checkIn
+        if (checkOut) newDetails.checkOut = formatToInputDate(checkOut) || checkOut
         if (roomType || board) {
           newDetails.rooms = [
             {
@@ -1826,8 +1860,15 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               newDetails.hotelName = hName
             }
             if (data.confirmationNumber || data.bookingCode) newDetails.confirmationNumber = data.confirmationNumber || data.bookingCode
-            if (data.checkIn || data.date || data.startDate) newDetails.checkIn = data.checkIn || data.date || data.startDate
-            if (data.checkOut || data.endDate) newDetails.checkOut = data.checkOut || data.endDate
+            
+            const rawCheckIn = data.checkIn || data.date || data.startDate || data.departureDate
+            const rawCheckOut = data.checkOut || data.endDate || data.arrivalTime
+            const rawCancel = data.cancellationDate || data.deadline
+
+            if (rawCheckIn) newDetails.checkIn = formatToInputDate(rawCheckIn) || rawCheckIn
+            if (rawCheckOut) newDetails.checkOut = formatToInputDate(rawCheckOut) || rawCheckOut
+            if (rawCancel) newDetails.cancellationDate = formatToInputDate(rawCancel) || rawCancel
+
             return { ...it, details: newDetails }
           })
         }))
@@ -3329,7 +3370,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Límite Cancelación Sin Cargo</label>
                                       <input
                                         type="date"
-                                        value={item.details.cancellationDate || ''}
+                                        value={formatToInputDate(item.details.cancellationDate)}
                                         onChange={e => updateItemDetails(item.id, 'cancellationDate', e.target.value)}
                                         className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold outline-none text-slate-800 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 transition-all h-[42px]"
                                       />
@@ -3341,7 +3382,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Fecha Check-In (Entrada)</label>
                                       <input
                                         type="date"
-                                        value={item.details.checkIn || ''}
+                                        value={formatToInputDate(item.details.checkIn)}
                                         onChange={e => updateItemDetails(item.id, 'checkIn', e.target.value)}
                                         className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold outline-none text-slate-800 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 transition-all h-[42px]"
                                       />
