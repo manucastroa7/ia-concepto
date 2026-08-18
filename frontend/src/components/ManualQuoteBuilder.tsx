@@ -373,6 +373,7 @@ interface Item {
   providerId: string
   title?: string
   description?: string
+  assignedPassengerIds?: string[]
   details: ItemDetails
   economics: ItemEconomics
   price?: number
@@ -385,6 +386,7 @@ interface Payment {
   method: string
   reference: string
   providerId?: string
+  passengerId?: string
 }
 
 export interface ArcaInvoice {
@@ -1485,11 +1487,43 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     quote.items.forEach(it => {
       if (it.providerId) set.add(it.providerId)
     })
-    ;(quote.providerPayments || []).forEach(p => {
-      if (p.providerId) set.add(p.providerId)
-    })
     return operators.filter(op => set.has(op.id))
   }, [quote.items, quote.providerPayments, operators])
+
+  // --- LISTA CONSOLIDADA DE TODOS LOS PASAJEROS DE ESTA COTIZACIÓN (TITULAR Y ACOMPAÑANTES) ---
+  const allQuotePassengers = useMemo(() => {
+    const list: { id: string; name: string; isTitular?: boolean }[] = []
+    if (quote.passengerId && quote.passenger) {
+      list.push({
+        id: quote.passengerId,
+        name: `${quote.passenger.surname}, ${quote.passenger.name}`,
+        isTitular: true
+      })
+    } else if (quote.clientName) {
+      list.push({
+        id: quote.passengerId || 'titular',
+        name: quote.clientName,
+        isTitular: true
+      })
+    }
+
+    (quote.additionalPassengers || []).forEach(addId => {
+      const found = passengers.find(p => p.id === addId)
+      if (found) {
+        list.push({
+          id: found.id,
+          name: `${found.surname}, ${found.name}`
+        })
+      } else {
+        list.push({
+          id: addId,
+          name: `Pasajero ${addId.substring(0, 6)}`
+        })
+      }
+    })
+
+    return list
+  }, [quote.passengerId, quote.passenger, quote.clientName, quote.additionalPassengers, passengers])
 
   const totals = useMemo(() => {
     let net = 0
@@ -2708,6 +2742,64 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                   </select>
                                 </div>
                               </div>
+
+                              {/* ASIGNACIÓN DE PASAJEROS / SUBGRUPO AL SERVICIO */}
+                              {allQuotePassengers.length > 1 && (
+                                <div className="mt-4 pt-4 border-t border-slate-100">
+                                  <div className="flex justify-between items-center mb-1.5 flex-wrap gap-2">
+                                    <label className="text-[11px] font-black text-slate-900 uppercase tracking-wider block">
+                                      👥 Pasajeros Asignados a este Servicio (Subgrupo / Pareja)
+                                    </label>
+                                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                      {(!item.assignedPassengerIds || item.assignedPassengerIds.length === 0)
+                                        ? `Aplica a todo el grupo (${allQuotePassengers.length} PAX)`
+                                        : `${item.assignedPassengerIds.length} de ${allQuotePassengers.length} PAX asignados`}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 mb-2.5">
+                                    Seleccioná qué pasajeros viajan en este aéreo o se alojan en esta habitación.
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {allQuotePassengers.map(pax => {
+                                      const isAssigned = !item.assignedPassengerIds || item.assignedPassengerIds.length === 0 || item.assignedPassengerIds.includes(pax.id)
+                                      return (
+                                        <button
+                                          key={pax.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setQuote(prev => ({
+                                              ...prev,
+                                              items: prev.items.map(it => {
+                                                if (it.id !== item.id) return it
+                                                let current = it.assignedPassengerIds || []
+                                                if (current.length === 0) {
+                                                  current = allQuotePassengers.map(p => p.id)
+                                                }
+                                                if (current.includes(pax.id)) {
+                                                  current = current.filter(id => id !== pax.id)
+                                                } else {
+                                                  current = [...current, pax.id]
+                                                }
+                                                if (current.length === allQuotePassengers.length) current = []
+                                                return { ...it, assignedPassengerIds: current }
+                                              })
+                                            }))
+                                          }}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                            isAssigned
+                                              ? 'bg-indigo-600 text-white shadow-2xs font-black'
+                                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                                          }`}
+                                        >
+                                          <span>{isAssigned ? '✓' : '+'}</span>
+                                          <span>{pax.name}</span>
+                                          {pax.isTitular && <span className="text-[9px] opacity-80">(Titular)</span>}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* AÉREOS FORMULARIO COMPLETO */}
@@ -3938,7 +4030,23 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                <div>
+                                  <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Imputar a Pasajero / Pareja</label>
+                                  <select
+                                    value={p.passengerId || ''}
+                                    onChange={e => updatePayment('payments', p.id, 'passengerId', e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800"
+                                  >
+                                    <option value="">Todo el Grupo (Consolidado)</option>
+                                    {allQuotePassengers.map(pax => (
+                                      <option key={pax.id} value={pax.id}>
+                                        👤 {pax.name} {pax.isTitular ? '(Titular)' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
                                 <div>
                                   <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Método de Pago</label>
                                   <select
@@ -4406,6 +4514,70 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
             {/* SCROLLABLE BODY */}
             <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar text-xs">
+              {/* FILTRO DE PASAJERO / SUBGRUPO SI HAY MÁS DE 1 PASAJERO */}
+              {allQuotePassengers.length > 1 && (
+                <div className="bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-xs font-black text-indigo-950 uppercase flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-indigo-600" /> Facturar a Pasajero / Pareja Específica ({allQuotePassengers.length} PAX)
+                    </p>
+                    <p className="text-[10.5px] text-indigo-700 font-medium">Podés emitir la factura para todo el grupo consolidado o discriminar solo a una pareja.</p>
+                  </div>
+                  <select
+                    onChange={e => {
+                      const paxId = e.target.value
+                      if (!paxId) {
+                        openNewArcaInvoiceModal(arcaInvoiceForm.mode)
+                        return
+                      }
+                      const foundPax = allQuotePassengers.find(p => p.id === paxId)
+                      if (foundPax) {
+                        const filteredItems = quote.items.filter(it => !it.assignedPassengerIds || it.assignedPassengerIds.length === 0 || it.assignedPassengerIds.includes(paxId))
+                        let fNoComp = 0
+                        let fExento = 0
+                        let fNet = 0
+                        filteredItems.forEach(it => {
+                          const eco = calculateItemEconomics(it)
+                          fNet += eco.totalSale
+                          if (it.economics.providerPurchaseInvoice) {
+                            fNoComp += Number(it.economics.providerPurchaseInvoice.noComputable || 0)
+                            fExento += Number(it.economics.providerPurchaseInvoice.exento || 0)
+                          } else {
+                            fNoComp += Math.round(eco.totalSale * 0.85 * 100) / 100
+                            fExento += Math.round(eco.totalSale * 0.10 * 100) / 100
+                          }
+                        })
+                        const fGrav21 = Math.max(0, Math.round((fNet - fNoComp - fExento) * 100) / 100)
+                        const fIva21 = Math.round(fGrav21 * 0.21 * 100) / 100
+                        const fTot = Math.round((fNoComp + fExento + fGrav21 + fIva21) * 100) / 100
+
+                        const foundFull = passengers.find(p => p.id === paxId)
+                        const doc = foundFull?.document || ''
+
+                        setArcaInvoiceForm((prev: any) => ({
+                          ...prev,
+                          receiverName: foundPax.name,
+                          receiverCuit: doc,
+                          noComputable: fNoComp,
+                          exento: fExento,
+                          netGravado21: fGrav21,
+                          iva21: fIva21,
+                          totalAmount: fTot
+                        }))
+                      }
+                    }}
+                    className="bg-white border border-indigo-200 px-3 py-2 rounded-xl text-xs font-bold text-indigo-900 outline-none shadow-2xs cursor-pointer"
+                  >
+                    <option value="">Reserva Completa ({allQuotePassengers.length} PAX Consolidado)</option>
+                    {allQuotePassengers.map(p => (
+                      <option key={p.id} value={p.id}>
+                        👤 {p.name} {p.isTitular ? '(Titular)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* RECEPTOR */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                 <div className="sm:col-span-2">
