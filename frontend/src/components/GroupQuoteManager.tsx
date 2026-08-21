@@ -1117,27 +1117,25 @@ export function GroupQuoteManager() {
               </div>
 
               {/* BOTONES PARA AGREGAR SERVICIOS */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
                 <p className="text-[10.5px] font-black uppercase tracking-wider text-slate-400">Agregar Servicios al Grupo</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                   {[
-                    { type: 'flight', label: 'VUELOS', icon: Plane, bg: 'bg-sky-50 text-sky-600 hover:bg-sky-500 hover:text-white border-sky-200/70' },
-                    { type: 'hotel', label: 'ALOJAMIENTO', icon: Hotel, bg: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white border-emerald-200/70' },
-                    { type: 'transfer', label: 'TRASLADOS', icon: Bus, bg: 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white border-amber-200/70' },
-                    { type: 'train', label: 'TRENES', icon: Train, bg: 'bg-purple-50 text-purple-600 hover:bg-purple-500 hover:text-white border-purple-200/70' },
-                    { type: 'assistance', label: 'ASISTENCIA', icon: ShieldCheck, bg: 'bg-indigo-50 text-indigo-600 hover:bg-indigo-500 hover:text-white border-indigo-200/70' },
-                    { type: 'service', label: 'EXCURSIÓN/OTRO', icon: Compass, bg: 'bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white border-slate-200' }
+                    { type: 'flight', label: 'Vuelo', icon: Plane, bg: 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-600 hover:text-white' },
+                    { type: 'hotel', label: 'Alojamiento', icon: Hotel, bg: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white' },
+                    { type: 'transfer', label: 'Traslado', icon: Bus, bg: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-600 hover:text-white' },
+                    { type: 'train', label: 'Tren', icon: Train, bg: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-600 hover:text-white' },
+                    { type: 'assistance', label: 'Asistencia', icon: ShieldCheck, bg: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-600 hover:text-white' },
+                    { type: 'service', label: 'Excursión / Otro', icon: Compass, bg: 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-900 hover:text-white' }
                   ].map(btn => (
                     <button
                       key={btn.type}
                       type="button"
                       onClick={() => handleAddItem(btn.type as any)}
-                      className={`bg-white border ${btn.bg.split(' ').pop()} p-3 rounded-2xl flex flex-col items-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-md hover:-translate-y-0.5`}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold border ${btn.bg} transition-all flex items-center gap-2 cursor-pointer shadow-2xs hover:shadow-xs hover:-translate-y-0.5`}
                     >
-                      <div className={`w-10 h-10 rounded-xl ${btn.bg.split(' ').slice(0, 4).join(' ')} flex items-center justify-center transition-all shadow-2xs`}>
-                        <btn.icon className="w-5 h-5 transition-transform group-hover:scale-110" />
-                      </div>
-                      <span className="text-[10px] font-black text-slate-800 tracking-wider uppercase text-center">{btn.label}</span>
+                      <btn.icon className="w-4 h-4" />
+                      <span>+ {btn.label}</span>
                     </button>
                   ))}
                 </div>
