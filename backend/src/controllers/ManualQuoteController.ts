@@ -210,6 +210,19 @@ export class ManualQuoteController {
         }
     }
 
+    static async parsePaymentReceipt(req: Request, res: Response) {
+        try {
+            if (!req.file) return res.status(400).json({ message: "No se subió archivo o imagen" });
+            const { GeminiVisionService } = require("../services/GeminiVisionService");
+            const vision = new GeminiVisionService();
+            const result = await vision.extractPaymentReceiptData(req.file.buffer, req.file.mimetype);
+            return res.json(result);
+        } catch (error: any) {
+            console.error("Error parsing payment receipt:", error);
+            return res.status(500).json({ message: error.message || "Error al procesar el comprobante de pago" });
+        }
+    }
+
     static async remove(req: Request, res: Response) {
         try {
             const { id } = req.params;

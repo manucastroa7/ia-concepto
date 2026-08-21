@@ -52,7 +52,6 @@ const MENU_GROUPS: NavGroup[] = [
     icon: Briefcase,
     items: [
       { id: 'dashboard-comercial', label: 'Dashboard Comercial', description: 'Métricas e ingresos', icon: LayoutDashboard },
-      { id: 'tariffs', label: 'Buscador de Ofertas', description: 'Tarifas y circuitos', icon: Search },
       { id: 'manual-quote', label: 'Cotizador Manual', description: 'Cotización personalizada', icon: Sparkles },
       { id: 'group-quotes', label: 'Cotizador de Grupos', description: 'Presupuesto contingentes', icon: Calculator },
     ]
@@ -77,6 +76,7 @@ const MENU_GROUPS: NavGroup[] = [
     category: 'Marketing & Difusión',
     icon: Megaphone,
     items: [
+      { id: 'tariffs', label: 'Buscador de Ofertas', description: 'Tarifas y circuitos', icon: Search },
       { id: 'web-packages', label: 'Vidriera Web (CRM)', description: 'Publicación en el sitio', icon: Globe },
       { id: 'flyer-extractor', label: 'Extractor de Flyers', description: 'Extraer PDF/Imagen con IA', icon: Image, badge: 'IA' },
       { id: 'flyer-history', label: 'Historial de Flyers', description: 'Biblioteca de promociones', icon: History },
@@ -149,7 +149,7 @@ export function App() {
               </div>
               <div>
                 <p className="text-base font-black text-slate-900 tracking-tight leading-none uppercase">
-                  {branding?.name || 'CONCEPTO'}
+                  {branding?.name || 'SIS - CONCEPTO'}
                 </p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                   Sistema Integrado

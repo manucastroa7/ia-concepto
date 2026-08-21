@@ -406,6 +406,41 @@ REGLAS STRICTAS:
 
     return JSON.parse(jsonMatch[0]);
   }
+
+  async extractPaymentReceiptData(fileBuffer: Buffer, mimeType: string) {
+    const base64 = fileBuffer.toString("base64");
+    const prompt = `Analiza esta imagen o captura de comprobante de transferencia bancaria, pago de Mercado Pago, recibo de depósito o voucher financiero (ej: Banco Galicia, Santander, BBVA, Banco Nación, Mercado Pago, etc.). Extrae la información en formato JSON puro, sin bloques markdown:
+
+FORMATO JSON DE SALIDA OBLIGATORIO:
+{
+  "amount": 715.92,
+  "currency": "USD" | "ARS" | "EUR",
+  "date": "12/08/2026",
+  "reference": "42634317510",
+  "method": "transfer" | "cash" | "card" | "mercadopago",
+  "recipientName": "Action Travel Sa",
+  "senderName": "MARIA MANUELA CASTRO ARELLANO",
+  "bankOrEntity": "Banco Galicia / Santander",
+  "concept": "Varios"
+}
+
+REGLAS STRICTAS DE EXTRACCIÓN:
+1. "amount": Extrae el monto numérico exacto pagado o transferido como float (ej: 715.92 para USD 715,92 o 715.00). Si dice "USD 715.92", "amount" es 715.92 y "currency" es "USD". Si es "$" o "ARS", "currency" es "ARS".
+2. "date": Extrae la fecha de la operación en formato DD/MM/YYYY (ej: 12/08/2026).
+3. "reference": Extrae el número de comprobante, transacción, N° de operación, ID de transferencia o referencia bancaria (ej: 42634317510, OP-8812).
+4. "method": Usa 'transfer' si es transferencia bancaria/CBU/CVU, 'mercadopago' si es Mercado Pago, 'card' si es tarjeta, o 'cash' si es efectivo.
+5. "recipientName": Nombre de la persona o empresa receptora / Para / Destinatario (ej: Action Travel Sa).
+6. "senderName": Nombre de la persona emisor / De / Remitente (ej: MARIA MANUELA CASTRO ARELLANO).
+7. "bankOrEntity": Banco o entidad desde/hacia donde se envió (ej: Banco Galicia, Santander).
+8. Si algún campo no se detecta, ponelo como null.
+9. Responde ÚNICAMENTE con el JSON válido.`;
+
+    const raw = await this.callAI(prompt, base64, mimeType);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se pudo extraer la información del comprobante de pago");
+
+    return JSON.parse(jsonMatch[0]);
+  }
 }
 
 function parseDateToTimestamp(dateStr?: string, timeStr?: string): number | null {

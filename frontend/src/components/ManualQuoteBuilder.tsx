@@ -566,6 +566,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
   const [isParsingFlight, setIsParsingFlight] = useState<string | null>(null)
   const [isParsingService, setIsParsingService] = useState<string | null>(null)
+  const [isParsingPayment, setIsParsingPayment] = useState<string | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [isDraggingOver, setIsDraggingOver] = useState<string | null>(null)
   const [expandedPayments, setExpandedPayments] = useState<Record<string, boolean>>({})
@@ -717,6 +718,60 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       return true
     })
   }, [historyQuotes, statusFilter, searchQuery])
+
+  // --- CÁLCULO FINANCIERO CON VALOR NETO DE PROVEEDOR Y GASTOS ADICIONALES ---
+  const calculateItemEconomics = (item: Item) => {
+    if (!item || !item.economics) {
+      return { totalCost: 0, totalProfit: 0, totalSale: 0, netoAPagar: 0, ganancia: 0, totalACobrar: 0 }
+    }
+    const { baseNetCost = 0, adjustments = [], pricingModel, passengerCount, commissionType = 'percentage', commissionValue = 0, totalComisionable, comision, iva, gastosAdm, suplementos, customExpenses } = item.economics
+    
+    let netoAPagar = 0
+    let ganancia = 0
+    let totalACobrar = 0
+    const sumCustomExpenses = (customExpenses || []).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
+
+    const isPerPax = pricingModel === 'per_passenger' || item.details?.costDividerMode === 'per_passenger'
+    const pCount = isPerPax ? Math.max(1, passengerCount || quote.paxCount || 1) : 1
+
+    if (totalComisionable && totalComisionable > 0) {
+      const com = Number(comision) || 0
+      const iv = Number(iva) || 0
+      const gAdm = Number(gastosAdm) || 0
+      const sup = Number(suplementos) || 0
+
+      // Neto a Pagar a Proveedor = Total Comisionable - Comisión + IVA + Gastos Adm + Suplementos + Líneas de Gastos Adicionales
+      netoAPagar = (Number(totalComisionable) - com + iv + gAdm + sup + sumCustomExpenses) * pCount
+      totalACobrar = (Number(totalComisionable) + sup + iv + gAdm + sumCustomExpenses) * pCount
+      ganancia = (totalACobrar - netoAPagar)
+    } else {
+      let totalCost = baseNetCost + sumCustomExpenses
+      let totalProfit = 0
+
+      adjustments?.forEach(adj => {
+        const val = adj.type === 'percentage' ? (baseNetCost * (adj.value / 100)) : adj.value
+        if (adj.impact === 'cost') totalCost += val
+        if (adj.impact === 'profit') totalProfit += val
+      })
+
+      let comm = commissionType === 'percentage' ? (baseNetCost * (commissionValue / 100)) : commissionValue
+      totalProfit += comm
+
+      let saleBeforePax = totalCost + totalProfit
+      netoAPagar = totalCost * pCount
+      ganancia = totalProfit * pCount
+      totalACobrar = saleBeforePax * pCount
+    }
+
+    return { 
+      totalCost: netoAPagar, 
+      totalProfit: ganancia, 
+      totalSale: totalACobrar,
+      netoAPagar,
+      ganancia,
+      totalACobrar
+    }
+  }
 
   // Cálculo de KPIs Ejecutivos del Listado
   const listKpis = useMemo(() => {
@@ -1426,6 +1481,134 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     }))
   }
 
+  // --- LECTURA AUTOMÁTICA DE COMPROBANTES DE PAGO CON IA ---
+  const handleParsePaymentReceipt = async (paymentType: 'payments' | 'providerPayments', paymentId: string, file: File) => {
+    setIsParsingPayment(paymentId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await axios.post('/api/manual-quotes/parse-payment-receipt', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const parsed = res.data
+      if (parsed) {
+        let formattedDate = ''
+        if (parsed.date && typeof parsed.date === 'string') {
+          const str = parsed.date.trim()
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            formattedDate = str
+          } else {
+            const match = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/)
+            if (match) {
+              const d = match[1].padStart(2, '0')
+              const m = match[2].padStart(2, '0')
+              let y = match[3]
+              if (y.length === 2) y = `20${y}`
+              formattedDate = `${y}-${m}-${d}`
+            }
+          }
+        }
+
+        const amt = typeof parsed.amount === 'number' ? parsed.amount : (parseFloat(parsed.amount) || 0)
+        const ref = parsed.reference || ''
+        const methodVal = parsed.method || 'transfer'
+
+        setExpandedPayments(prev => ({ ...prev, [paymentId]: true }))
+
+        if (amt > 0) updatePayment(paymentType, paymentId, 'amount', amt)
+        if (formattedDate) updatePayment(paymentType, paymentId, 'date', formattedDate)
+        if (ref) updatePayment(paymentType, paymentId, 'reference', ref)
+        if (methodVal) updatePayment(paymentType, paymentId, 'method', methodVal)
+
+        if (paymentType === 'providerPayments' && parsed.recipientName) {
+          const recUpper = String(parsed.recipientName).toUpperCase()
+          const matchedOp = operators.find(op => op.name.toUpperCase().includes(recUpper) || recUpper.includes(op.name.toUpperCase()))
+          if (matchedOp) {
+            updatePayment('providerPayments', paymentId, 'providerId', matchedOp.id)
+            toast.success(`Proveedor detectado: ${matchedOp.name}`)
+          }
+        } else if (paymentType === 'payments' && parsed.senderName) {
+          const sendUpper = String(parsed.senderName).toUpperCase()
+          const matchedPax = allQuotePassengers.find(pax => {
+            const fullName = String(pax.name || '').toUpperCase()
+            return fullName.includes(sendUpper) || sendUpper.includes(fullName)
+          })
+          if (matchedPax) {
+            updatePayment('payments', paymentId, 'passengerId', matchedPax.id)
+            toast.success(`Pasajero detectado: ${matchedPax.name}`)
+          }
+        }
+
+        toast.success(`Comprobante procesado con IA: $${amt} (Ref: ${ref || 'Sin ref'})`, { icon: '🤖' })
+      }
+    } catch (e) {
+      toast.error('Error al analizar la imagen del comprobante de pago')
+    } finally {
+      setIsParsingPayment(null)
+    }
+  }
+
+  const handlePastePaymentFromClipboard = async (paymentType: 'payments' | 'providerPayments', paymentId: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V o usá el botón de subir imagen para cargar el comprobante')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'comprobante-pago.png', { type: imageType })
+          toast.loading('Analizando comprobante de pago con IA...', { id: 'paste-payment' })
+          await handleParsePaymentReceipt(paymentType, paymentId, file)
+          toast.dismiss('paste-payment')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) del comprobante e intentá de nuevo.')
+    } catch (err) {
+      toast.error('Copiá la imagen del comprobante (Win+Shift+S) y presioná Pegar Comprobante')
+    }
+  }
+
+  const handleCreatePaymentFromReceipt = async (paymentType: 'payments' | 'providerPayments', file: File) => {
+    const newP: Payment = {
+      id: Math.random().toString(36).substr(2, 9),
+      date: new Date().toISOString().slice(0, 10),
+      amount: 0,
+      method: 'transfer',
+      reference: ''
+    }
+    setExpandedPayments(prev => ({ ...prev, [newP.id]: true }))
+    setQuote(prev => ({ ...prev, [paymentType]: [...(prev[paymentType] || []), newP] }))
+    toast.loading('Analizando comprobante de pago con IA...', { id: 'new-payment-ai' })
+    await handleParsePaymentReceipt(paymentType, newP.id, file)
+    toast.dismiss('new-payment-ai')
+  }
+
+  const handleCreatePaymentFromClipboard = async (paymentType: 'payments' | 'providerPayments') => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar el comprobante')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'comprobante-pago.png', { type: imageType })
+          await handleCreatePaymentFromReceipt(paymentType, file)
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) del comprobante e intentá de nuevo.')
+    } catch (err) {
+      toast.error('Copiá la imagen del comprobante (Win+Shift+S) e intentá de nuevo')
+    }
+  }
+
   const removeItem = (id: string) => {
     setItemToDelete(id)
   }
@@ -1435,57 +1618,6 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     setQuote(prev => ({ ...prev, items: prev.items.filter(it => it.id !== itemToDelete) }))
     setItemToDelete(null)
     toast.success('Servicio eliminado')
-  }
-
-  // --- CÁLCULO FINANCIERO CON VALOR NETO DE PROVEEDOR Y GASTOS ADICIONALES ---
-  const calculateItemEconomics = (item: Item) => {
-    const { baseNetCost, adjustments, pricingModel, passengerCount, commissionType, commissionValue, totalComisionable, comision, iva, gastosAdm, suplementos, customExpenses } = item.economics
-    
-    let netoAPagar = 0
-    let ganancia = 0
-    let totalACobrar = 0
-    const sumCustomExpenses = (customExpenses || []).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
-
-    const isPerPax = pricingModel === 'per_passenger' || item.details.costDividerMode === 'per_passenger'
-    const pCount = isPerPax ? Math.max(1, passengerCount || quote.paxCount || 1) : 1
-
-    if (totalComisionable && totalComisionable > 0) {
-      const com = Number(comision) || 0
-      const iv = Number(iva) || 0
-      const gAdm = Number(gastosAdm) || 0
-      const sup = Number(suplementos) || 0
-
-      // Neto a Pagar a Proveedor = Total Comisionable - Comisión + IVA + Gastos Adm + Suplementos + Líneas de Gastos Adicionales
-      netoAPagar = (Number(totalComisionable) - com + iv + gAdm + sup + sumCustomExpenses) * pCount
-      totalACobrar = (Number(totalComisionable) + sup + iv + gAdm + sumCustomExpenses) * pCount
-      ganancia = (totalACobrar - netoAPagar)
-    } else {
-      let totalCost = baseNetCost + sumCustomExpenses
-      let totalProfit = 0
-
-      adjustments.forEach(adj => {
-        const val = adj.type === 'percentage' ? (baseNetCost * (adj.value / 100)) : adj.value
-        if (adj.impact === 'cost') totalCost += val
-        if (adj.impact === 'profit') totalProfit += val
-      })
-
-      let comm = commissionType === 'percentage' ? (baseNetCost * (commissionValue / 100)) : commissionValue
-      totalProfit += comm
-
-      let saleBeforePax = totalCost + totalProfit
-      netoAPagar = totalCost * pCount
-      ganancia = totalProfit * pCount
-      totalACobrar = saleBeforePax * pCount
-    }
-
-    return { 
-      totalCost: netoAPagar, 
-      totalProfit: ganancia, 
-      totalSale: totalACobrar,
-      netoAPagar,
-      ganancia,
-      totalACobrar
-    }
   }
 
   // --- DESGLOSE DE NETO Y PAGADO POR PROVEEDOR ESPECÍFICO ---
@@ -1577,14 +1709,27 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     const totalCollected = (quote.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
     const totalProviderPaid = (quote.providerPayments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
 
+    const overpayment = Math.max(0, totalCollected - sale)
+    const pendingCollection = Math.max(0, sale - totalCollected)
+    const pendingProviderPayment = Math.max(0, net - totalProviderPaid)
+    
+    // Ganancia Real de Caja (Lo cobrado al cliente menos lo pagado a proveedores)
+    const realCashProfit = totalCollected - totalProviderPaid
+
+    // Ganancia Total Proyectada (Ganancia Cotizada + Excedente cobrado al pasajero)
+    const totalProjectedProfit = profit + overpayment
+
     return { 
       totalNet: net, 
       totalProfit: profit, 
       totalSale: Math.max(0, sale),
       totalCollected,
-      pendingCollection: Math.max(0, sale - totalCollected),
+      pendingCollection,
+      overpayment,
       totalProviderPaid,
-      pendingProviderPayment: Math.max(0, net - totalProviderPaid)
+      pendingProviderPayment,
+      realCashProfit,
+      totalProjectedProfit
     }
   }, [quote])
 
@@ -4167,12 +4312,38 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   </div>
 
                   <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200">
-                    <p className="text-[10px] font-bold text-emerald-600 uppercase">Ganancia Bruta Estimada</p>
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-bold text-emerald-600 uppercase">Ganancia Cotizada Estimada</p>
+                      <span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Teórica</span>
+                    </div>
                     <p className="text-lg font-black text-emerald-700">+{quote.currency} ${fmtVal(totals.totalProfit)}</p>
                   </div>
 
+                  {totals.overpayment > 0 && (
+                    <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 space-y-1 animate-in zoom-in-95">
+                      <div className="flex justify-between items-center text-[10px] font-black text-amber-800 uppercase">
+                        <span className="flex items-center gap-1">✨ Excedente / Cobrado de Más</span>
+                        <span className="text-amber-700 font-mono">+{quote.currency} ${fmtVal(totals.overpayment)}</span>
+                      </div>
+                      <p className="text-[10.5px] text-amber-900 leading-tight">
+                        Los pasajeros abonaron de más por sobre la venta cotizada. Este excedente incrementa directamente tu ganancia real.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="bg-gradient-to-tr from-emerald-600 to-teal-700 p-4 rounded-2xl text-white shadow-md space-y-1">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-black uppercase text-emerald-100">Ganancia Real en Caja (Cobrado - Pagado)</p>
+                      <span className="text-[9px] font-bold bg-white/20 text-white px-2 py-0.5 rounded">Efectivo Real</span>
+                    </div>
+                    <p className="text-2xl font-black">+{quote.currency} ${fmtVal(totals.realCashProfit)}</p>
+                    <p className="text-[10px] text-emerald-100 font-medium">
+                      Calculado sobre ${fmtVal(totals.totalCollected)} cobrados - ${fmtVal(totals.totalProviderPaid)} pagados a proveedores
+                    </p>
+                  </div>
+
                   <div className="bg-gradient-to-tr from-orange-500 to-amber-500 p-5 rounded-2xl text-white shadow-lg shadow-orange-500/20">
-                    <p className="text-[10px] font-black uppercase text-orange-100">Total Final a Percibir</p>
+                    <p className="text-[10px] font-black uppercase text-orange-100">Total Final a Percibir (Venta Cotizada)</p>
                     <p className="text-2xl font-black">{quote.currency} ${fmtVal(totals.totalSale)}</p>
                   </div>
 
@@ -4257,13 +4428,23 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                       Cobrado: <strong className="text-emerald-600">${fmtVal(totals.totalCollected)}</strong> · Pendiente: <strong className="text-orange-600">${fmtVal(totals.pendingCollection)}</strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => addPayment('payments')}
-                    className="px-3.5 py-1.5 bg-emerald-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-emerald-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Nuevo Cobro
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCreatePaymentFromClipboard('payments')}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 font-black text-xs uppercase rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                      title="Crea una línea de cobro y extrae los datos desde la imagen en el portapapeles"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Pegar Comprobante IA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addPayment('payments')}
+                      className="px-3.5 py-1.5 bg-emerald-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-emerald-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Nuevo Cobro
+                    </button>
+                  </div>
                 </div>
 
                 {/* BARRA DE PROGRESO DE COBRO */}
@@ -4335,6 +4516,43 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                           {/* DETALLE EXPANDIBLE */}
                           {isExp && (
                             <div className="p-4 border-t border-slate-100 bg-white space-y-3">
+                              {/* BOX IA PARA COMPROBANTE DE COBRO */}
+                              <div className="flex items-center justify-between bg-gradient-to-r from-emerald-50/70 to-teal-50/70 p-3 rounded-xl border border-emerald-200/80 gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
+                                    <Sparkles className="w-4 h-4 animate-pulse" />
+                                  </div>
+                                  <div>
+                                    <span className="text-xs font-black text-slate-800 block">Autocompletar con Comprobante (IA)</span>
+                                    <span className="text-[10.5px] text-slate-500 font-medium">Pegá la captura (Win+Shift+S) de Galicia, MP, etc.</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePastePaymentFromClipboard('payments', p.id)}
+                                    disabled={isParsingPayment === p.id}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isParsingPayment === p.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Clipboard className="w-3.5 h-3.5" />}
+                                    {isParsingPayment === p.id ? 'Analizando...' : 'Pegar Comprobante'}
+                                  </button>
+                                  <label className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer">
+                                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                                    Subir
+                                    <input
+                                      type="file"
+                                      accept="image/*,application/pdf"
+                                      className="hidden"
+                                      onChange={e => {
+                                        if (e.target.files?.[0]) {
+                                          handleParsePaymentReceipt('payments', p.id, e.target.files[0])
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                   <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Cobro</label>
@@ -4420,13 +4638,23 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                       Pagado: <strong className="text-sky-600">${fmtVal(totals.totalProviderPaid)}</strong> · Pendiente: <strong className="text-amber-600">${fmtVal(totals.pendingProviderPayment)}</strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => addPayment('providerPayments')}
-                    className="px-3.5 py-1.5 bg-sky-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-sky-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Nuevo Pago
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCreatePaymentFromClipboard('providerPayments')}
+                      className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 font-black text-xs uppercase rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                      title="Crea una línea de pago a proveedor y extrae los datos desde la imagen en el portapapeles"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-sky-600" /> Pegar Comprobante IA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addPayment('providerPayments')}
+                      className="px-3.5 py-1.5 bg-sky-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-sky-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Nuevo Pago
+                    </button>
+                  </div>
                 </div>
 
                 {/* BARRA DE PROGRESO DE PAGOS PROVEEDORES */}
@@ -4502,6 +4730,43 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                           {/* DETALLE EXPANDIBLE */}
                           {isExp && (
                             <div className="p-4 border-t border-slate-100 bg-white space-y-3">
+                              {/* BOX IA PARA COMPROBANTE DE PROVEEDOR */}
+                              <div className="flex items-center justify-between bg-gradient-to-r from-sky-50/70 to-blue-50/70 p-3 rounded-xl border border-sky-200/80 gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold shrink-0">
+                                    <Sparkles className="w-4 h-4 animate-pulse" />
+                                  </div>
+                                  <div>
+                                    <span className="text-xs font-black text-slate-800 block">Autocompletar Pago a Proveedor (IA)</span>
+                                    <span className="text-[10.5px] text-slate-500 font-medium">Pegá la captura (Win+Shift+S) de Galicia, MP, etc.</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePastePaymentFromClipboard('providerPayments', p.id)}
+                                    disabled={isParsingPayment === p.id}
+                                    className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isParsingPayment === p.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Clipboard className="w-3.5 h-3.5" />}
+                                    {isParsingPayment === p.id ? 'Analizando...' : 'Pegar Comprobante'}
+                                  </button>
+                                  <label className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer">
+                                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                                    Subir
+                                    <input
+                                      type="file"
+                                      accept="image/*,application/pdf"
+                                      className="hidden"
+                                      onChange={e => {
+                                        if (e.target.files?.[0]) {
+                                          handleParsePaymentReceipt('providerPayments', p.id, e.target.files[0])
+                                        }
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                   <label className="text-[9.5px] font-bold text-slate-400 uppercase block mb-1">Fecha Pago</label>
