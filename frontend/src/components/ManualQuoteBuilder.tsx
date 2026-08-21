@@ -2845,6 +2845,17 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   </div>
                 </div>
 
+                {/* TÍTULO / NOMBRE DE LA COTIZACIÓN */}
+                <div>
+                  <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Nombre / Título de la Cotización</label>
+                  <input
+                    value={quote.title || ''}
+                    onChange={e => setQuote(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Ej: Viaje Familia Aranes - Chile 2026 / Escapada Madrid / Luna de Miel"
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-orange-500 focus:bg-white transition-all"
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* SELECTOR / BÚSQUEDA DE TITULAR */}
                   <div className="md:col-span-2 relative">
