@@ -90,12 +90,18 @@ export interface GroupItemDetails {
   description?: string
 }
 
+export type ServiceLiberadosRule = 'none' | '1_10' | '1_15' | '1_20' | 'fixed'
+
 export interface GroupItemEconomics {
   baseNetCost: number
   adjustments: { id: string; label: string; type: 'percentage' | 'fixed'; value: number; impact: 'cost' | 'profit' }[]
   pricingModel: 'per_passenger' | 'divided_total'
   passengerCount: number
-  liberados: number
+  
+  // Liberados por Servicio Individual
+  liberadosRule: ServiceLiberadosRule
+  liberadosCount: number
+  
   commissionType: 'percentage' | 'fixed'
   commissionValue: number
   totalComisionable?: number
@@ -126,8 +132,6 @@ export interface GroupPayment {
   passengerId?: string
 }
 
-export type LiberadosRule = 'none' | '1_10' | '1_15' | '1_20' | 'fixed'
-
 export interface GroupQuoteState {
   id?: string
   quoteNumber: string
@@ -139,8 +143,6 @@ export interface GroupQuoteState {
   endDate: string
   validUntil: string
   pax: number
-  liberadosRule: LiberadosRule
-  fixedLiberados: number
   currency: 'USD' | 'ARS' | 'EUR'
   globalCommission: number
   commissionMode: 'percent' | 'fixed'
@@ -178,8 +180,6 @@ export function GroupQuoteManager() {
     endDate: '',
     validUntil: '',
     pax: 20,
-    liberadosRule: '1_15',
-    fixedLiberados: 0,
     currency: 'USD',
     globalCommission: 15,
     commissionMode: 'percent',
@@ -196,21 +196,21 @@ export function GroupQuoteManager() {
 
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   const [operators, setOperators] = useState<any[]>([])
-  const [passengers, setPassengers] = useState<any[]>([])
   const [historyQuotes, setHistoryQuotes] = useState<any[]>([])
   const [expandedPayments, setExpandedPayments] = useState<Record<string, boolean>>({})
+  
+  // Estados de parsing de IA
   const [isParsingPayment, setIsParsingPayment] = useState<string | null>(null)
   const [isParsingFlight, setIsParsingFlight] = useState<string | null>(null)
   const [isParsingService, setIsParsingService] = useState<string | null>(null)
+  
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved'>('idle')
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [whatsappText, setWhatsappText] = useState('')
   const isFirstMount = useRef(true)
 
   useEffect(() => {
     fetchOperators()
     fetchHistory()
-    fetchPassengers()
   }, [])
 
   // Autoguardado debounced (1.5s)
@@ -258,15 +258,6 @@ export function GroupQuoteManager() {
     }
   }
 
-  const fetchPassengers = async () => {
-    try {
-      const res = await axios.get('/api/passengers')
-      setPassengers(Array.isArray(res.data) ? res.data : [])
-    } catch {
-      setPassengers([])
-    }
-  }
-
   const fetchHistory = async () => {
     try {
       const res = await axios.get('/api/group-quotes')
@@ -276,26 +267,26 @@ export function GroupQuoteManager() {
     }
   }
 
-  // --- MOTOR DE CÁLCULO DE LIBERADOS Y ECONOMÍA DEL GRUPO ---
-  const liberatedPax = useMemo(() => {
+  // --- MÉTODOS DE CÁLCULO DE LIBERADOS POR SERVICIO ---
+  const getItemLiberadosCount = (item: GroupItem): number => {
     const totalPax = Math.max(1, Number(quote.pax) || 1)
-    if (quote.liberadosRule === '1_10') return Math.floor(totalPax / 10)
-    if (quote.liberadosRule === '1_15') return Math.floor(totalPax / 15)
-    if (quote.liberadosRule === '1_20') return Math.floor(totalPax / 20)
-    if (quote.liberadosRule === 'fixed') return Math.max(0, Number(quote.fixedLiberados) || 0)
+    const rule = item.economics.liberadosRule || 'none'
+    if (rule === '1_10') return Math.floor(totalPax / 10)
+    if (rule === '1_15') return Math.floor(totalPax / 15)
+    if (rule === '1_20') return Math.floor(totalPax / 20)
+    if (rule === 'fixed') return Math.max(0, Number(item.economics.liberadosCount) || 0)
     return 0
-  }, [quote.pax, quote.liberadosRule, quote.fixedLiberados])
+  }
 
-  const paidPax = useMemo(() => {
-    const totalPax = Math.max(1, Number(quote.pax) || 1)
-    return Math.max(1, totalPax - liberatedPax)
-  }, [quote.pax, liberatedPax])
-
-  // Cálculo individual de cada item
+  // Cálculo individual de cada tarjeta de servicio según sus propios liberados
   const calculateItemEconomics = (item: GroupItem) => {
     if (!item || !item.economics) {
-      return { totalCost: 0, totalProfit: 0, totalSale: 0, netoAPagar: 0, ganancia: 0, totalACobrar: 0 }
+      return { totalCost: 0, totalProfit: 0, totalSale: 0, netoAPagar: 0, ganancia: 0, totalACobrar: 0, itemLiberados: 0, itemPaidPax: Number(quote.pax) || 1 }
     }
+    const totalPax = Math.max(1, Number(quote.pax) || 1)
+    const itemLiberados = getItemLiberadosCount(item)
+    const itemPaidPax = Math.max(0, totalPax - itemLiberados)
+
     const { baseNetCost = 0, adjustments = [], pricingModel, commissionType = 'percentage', commissionValue = 0, totalComisionable, comision, iva, gastosAdm, suplementos, customExpenses } = item.economics
     
     let netoAPagar = 0
@@ -303,9 +294,9 @@ export function GroupQuoteManager() {
     let totalACobrar = 0
     const sumCustomExpenses = (customExpenses || []).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
 
-    // Para grupos: por defecto si es por persona se multiplica por el total de pax del grupo
+    // Si es por persona, se cobra únicamente por los pax pagantes de este servicio
     const isPerPax = pricingModel === 'per_passenger' || item.details?.costDividerMode === 'per_passenger'
-    const pCount = isPerPax ? Math.max(1, Number(quote.pax) || 1) : 1
+    const pCount = isPerPax ? itemPaidPax : 1
 
     if (totalComisionable && totalComisionable > 0) {
       const com = Number(comision) || 0
@@ -335,21 +326,28 @@ export function GroupQuoteManager() {
       totalACobrar = saleBeforePax * pCount
     }
 
-    return { totalCost: netoAPagar, totalProfit: ganancia, totalSale: totalACobrar, netoAPagar, ganancia, totalACobrar }
+    return { totalCost: netoAPagar, totalProfit: ganancia, totalSale: totalACobrar, netoAPagar, ganancia, totalACobrar, itemLiberados, itemPaidPax }
   }
 
-  // Totales consolidados del Grupo
+  // Totales consolidados del Grupo con Amortización
   const totals = useMemo(() => {
     let totalNet = 0
     let serviceProfit = 0
     let totalSale = 0
+    let maxLiberadosInServices = 0
 
     quote.items.forEach(it => {
       const eco = calculateItemEconomics(it)
       totalNet += eco.netoAPagar
       serviceProfit += eco.ganancia
       totalSale += eco.totalACobrar
+      if (eco.itemLiberados > maxLiberadosInServices) {
+        maxLiberadosInServices = eco.itemLiberados
+      }
     })
+
+    const totalGroupPax = Math.max(1, Number(quote.pax) || 1)
+    const effectivePaidPax = Math.max(1, totalGroupPax - maxLiberadosInServices)
 
     const override = Number(quote.priceOverride) || 0
     let totalSelling = 0
@@ -357,12 +355,12 @@ export function GroupQuoteManager() {
 
     if (override > 0) {
       sellingPerPaidPax = override
-      totalSelling = override * paidPax
+      totalSelling = override * effectivePaidPax
     } else {
       const globalComm = Number(quote.globalCommission) || 0
-      const globalProfit = quote.commissionMode === 'fixed' ? (globalComm * paidPax) : (totalNet * (globalComm / 100))
+      const globalProfit = quote.commissionMode === 'fixed' ? (globalComm * effectivePaidPax) : (totalNet * (globalComm / 100))
       totalSelling = Math.ceil(totalNet + serviceProfit + globalProfit)
-      sellingPerPaidPax = paidPax > 0 ? Math.ceil(totalSelling / paidPax) : totalSelling
+      sellingPerPaidPax = effectivePaidPax > 0 ? Math.ceil(totalSelling / effectivePaidPax) : totalSelling
     }
 
     const totalCollected = (quote.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
@@ -377,13 +375,15 @@ export function GroupQuoteManager() {
       totalProfit,
       totalSelling,
       sellingPerPaidPax,
+      effectivePaidPax,
+      maxLiberadosInServices,
       totalCollected,
       pendingCollection,
       totalProviderPaid,
       pendingProviderPayment,
       realCashProfit
     }
-  }, [quote, paidPax])
+  }, [quote])
 
   // Desglose por Operadores
   const providerSummaryMap = useMemo(() => {
@@ -419,7 +419,7 @@ export function GroupQuoteManager() {
     return operators.filter(op => set.has(op.id))
   }, [quote.items, operators])
 
-  // --- MÉTODOS DE MANIPULACIÓN DE SERVICIOS ---
+  // --- MÉTODOS DE SERVICIOS ---
   const handleAddItem = (type: GroupItem['type']) => {
     const newItem: GroupItem = {
       id: uid(),
@@ -461,7 +461,8 @@ export function GroupQuoteManager() {
         adjustments: [],
         pricingModel: 'per_passenger',
         passengerCount: quote.pax || 20,
-        liberados: 0,
+        liberadosRule: 'none',
+        liberadosCount: 0,
         commissionType: 'percentage',
         commissionValue: 10,
         customExpenses: []
@@ -469,7 +470,7 @@ export function GroupQuoteManager() {
     }
     setQuote(prev => ({ ...prev, items: [...prev.items, newItem] }))
     setExpandedItem(newItem.id)
-    toast.success(`Servicio de ${type.toUpperCase()} agregado al grupo`)
+    toast.success(`Servicio de ${type.toUpperCase()} agregado`)
   }
 
   const removeItem = (itemId: string) => {
@@ -491,7 +492,168 @@ export function GroupQuoteManager() {
     }))
   }
 
-  // --- LECTURA DE COMPROBANTES CON IA ---
+  // --- LECTURA AUTOMÁTICA DE VOUCHERS Y TICKETES DE CADA SERVICIO CON IA ---
+  const handleParseFlightTicket = async (itemId: string, file: File) => {
+    setIsParsingFlight(itemId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await axios.post('/api/manual-quotes/parse-flight-ticket', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const parsed = res.data
+      if (parsed) {
+        setQuote(prev => ({
+          ...prev,
+          items: prev.items.map(it => {
+            if (it.id === itemId) {
+              return {
+                ...it,
+                details: {
+                  ...it.details,
+                  airline: parsed.airline || it.details.airline,
+                  bookingCode: parsed.bookingCode || it.details.bookingCode,
+                  type: parsed.type || it.details.type,
+                  segments: Array.isArray(parsed.segments) && parsed.segments.length > 0 ? parsed.segments : it.details.segments,
+                  baggage: parsed.baggage || it.details.baggage
+                }
+              }
+            }
+            return it
+          })
+        }))
+        toast.success('Vuelo procesado automáticamente con IA')
+      }
+    } catch {
+      toast.error('Error al analizar la captura de vuelo')
+    } finally {
+      setIsParsingFlight(null)
+    }
+  }
+
+  const handlePasteFlightFromClipboard = async (itemId: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar la captura')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'clipboard-flight.png', { type: imageType })
+          toast.loading('Analizando reserva de vuelo con IA...', { id: 'paste-flight' })
+          await handleParseFlightTicket(itemId, file)
+          toast.dismiss('paste-flight')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) e intentá de nuevo.')
+    } catch {
+      toast.error('Presioná Ctrl + V sobre la sección para pegar la imagen')
+    }
+  }
+
+  const handleParseServiceVoucher = async (itemId: string, file: File, serviceType: string) => {
+    setIsParsingService(itemId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await axios.post('/api/manual-quotes/parse-service-voucher', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const parsed = res.data
+      if (parsed) {
+        setQuote(prev => ({
+          ...prev,
+          items: prev.items.map(it => {
+            if (it.id === itemId) {
+              const updatedDetails = { ...it.details }
+              const updatedEconomics = { ...it.economics }
+
+              if (parsed.hotelName) updatedDetails.hotelName = parsed.hotelName
+              if (parsed.origin) updatedDetails.origin = parsed.origin
+              if (parsed.destination) updatedDetails.destination = parsed.destination
+              if (parsed.confirmationNumber || parsed.bookingCode) {
+                const c = parsed.confirmationNumber || parsed.bookingCode
+                updatedDetails.confirmationNumber = c
+                updatedDetails.bookingCode = c
+              }
+              if (parsed.checkIn) updatedDetails.checkIn = parsed.checkIn
+              if (parsed.checkOut) updatedDetails.checkOut = parsed.checkOut
+              if (parsed.description) updatedDetails.description = parsed.description
+              if (parsed.price && typeof parsed.price === 'number') updatedEconomics.baseNetCost = parsed.price
+
+              return { ...it, details: updatedDetails, economics: updatedEconomics }
+            }
+            return it
+          })
+        }))
+        toast.success(`Comprobante de ${serviceType.toUpperCase()} procesado con IA`)
+      }
+    } catch {
+      toast.error('Error al analizar el comprobante')
+    } finally {
+      setIsParsingService(null)
+    }
+  }
+
+  const handlePasteVoucherFromClipboard = async (itemId: string, serviceType: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar la captura')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], `clipboard-${serviceType}.png`, { type: imageType })
+          toast.loading(`Analizando comprobante de ${serviceType.toUpperCase()}...`, { id: 'paste-voucher' })
+          await handleParseServiceVoucher(itemId, file, serviceType)
+          toast.dismiss('paste-voucher')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) e intentá de nuevo.')
+    } catch {
+      toast.error('Presioná Ctrl + V sobre la sección para pegar la imagen')
+    }
+  }
+
+  // Listener global para capturar Ctrl+V en CUALQUIER servicio de grupo expandido
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (!expandedItem) return
+      const targetItem = quote.items.find(it => it.id === expandedItem)
+      if (!targetItem) return
+
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile()
+          if (file) {
+            e.preventDefault()
+            toast.loading(`Analizando captura para ${targetItem.type.toUpperCase()} con IA...`, { id: 'ctrl-v-paste' })
+            if (targetItem.type === 'flight') {
+              handleParseFlightTicket(targetItem.id, file).finally(() => toast.dismiss('ctrl-v-paste'))
+            } else {
+              handleParseServiceVoucher(targetItem.id, file, targetItem.type).finally(() => toast.dismiss('ctrl-v-paste'))
+            }
+            return
+          }
+        }
+      }
+    }
+
+    window.addEventListener('paste', handleGlobalPaste)
+    return () => window.removeEventListener('paste', handleGlobalPaste)
+  }, [expandedItem, quote.items])
+
+  // --- LECTURA AUTOMÁTICA DE COMPROBANTES DE PAGO CON IA ---
   const handleParsePaymentReceipt = async (paymentType: 'payments' | 'providerPayments', paymentId: string, file: File) => {
     setIsParsingPayment(paymentId)
     try {
@@ -720,8 +882,6 @@ export function GroupQuoteManager() {
                     endDate: '',
                     validUntil: '',
                     pax: 20,
-                    liberadosRule: '1_15',
-                    fixedLiberados: 0,
                     currency: 'USD',
                     globalCommission: 15,
                     commissionMode: 'percent',
@@ -794,7 +954,7 @@ export function GroupQuoteManager() {
               </div>
               <div>
                 <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Cotizador de Grupos</h1>
-                <p className="text-xs text-slate-500 font-semibold">Cálculo Inteligente de Liberados, Márgenes y Costos por Pasajero Amortizado</p>
+                <p className="text-xs text-slate-500 font-semibold">Cálculo de Liberados Específicos por Servicio y Amortización en Pax Pagantes</p>
               </div>
             </div>
 
@@ -826,7 +986,7 @@ export function GroupQuoteManager() {
             </div>
           </div>
 
-          {/* MOTOR DE CÁLCULO DE LIBERADOS (KPI CARDS SUPERIORES) */}
+          {/* RESUMEN FINANCIERO DEL GRUPO CON AMORTIZACIÓN DE LIBERADOS */}
           <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-3xl text-white shadow-xl space-y-6">
             <div className="flex items-center justify-between border-b border-slate-700/80 pb-4 flex-wrap gap-4">
               <div className="flex items-center gap-3">
@@ -834,37 +994,9 @@ export function GroupQuoteManager() {
                   <Award className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Configuración de Liberados (Free Spots)</h3>
-                  <p className="text-xs text-slate-400 font-medium">Define las plazas sin cargo para coordinadores, profesores o choferes amortizadas en los pagantes</p>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Resumen General de Pasajeros y Amortización</h3>
+                  <p className="text-xs text-slate-400 font-medium">Los liberados se configuran en cada tarjeta de servicio y se amortizan en el precio final por pax pagante</p>
                 </div>
-              </div>
-
-              {/* SELECTOR DE REGLA DE LIBERADOS */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-xs font-bold text-slate-300 uppercase">Regla de Liberados:</span>
-                <select
-                  value={quote.liberadosRule}
-                  onChange={e => setQuote(prev => ({ ...prev, liberadosRule: e.target.value as LiberadosRule }))}
-                  className="bg-slate-800 border border-slate-700 text-orange-400 font-black text-xs px-3.5 py-2 rounded-xl outline-none"
-                >
-                  <option value="1_10">1 Liberado cada 10 Pax (10+1)</option>
-                  <option value="1_15">1 Liberado cada 15 Pax (15+1)</option>
-                  <option value="1_20">1 Liberado cada 20 Pax (20+1)</option>
-                  <option value="fixed">Liberados Fijos (Manual)</option>
-                  <option value="none">Sin Liberados (Todos Pagantes)</option>
-                </select>
-
-                {quote.liberadosRule === 'fixed' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-300">Cant:</span>
-                    <input
-                      type="number"
-                      value={quote.fixedLiberados}
-                      onChange={e => setQuote(prev => ({ ...prev, fixedLiberados: parseInt(e.target.value) || 0 }))}
-                      className="w-16 bg-slate-800 border border-slate-700 text-white font-black text-xs px-2.5 py-2 rounded-xl outline-none text-center"
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
@@ -884,8 +1016,8 @@ export function GroupQuoteManager() {
               </div>
 
               <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
-                <p className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Pax Pagantes vs Liberados</p>
-                <p className="text-2xl font-black text-white">{paidPax} <span className="text-xs font-bold text-orange-400">Pagantes (+{liberatedPax} Liberados)</span></p>
+                <p className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Pax Pagantes vs Máx Liberados</p>
+                <p className="text-2xl font-black text-white">{totals.effectivePaidPax} <span className="text-xs font-bold text-orange-400">Pagantes (+{totals.maxLiberadosInServices} Lib.)</span></p>
               </div>
 
               <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
@@ -1005,7 +1137,7 @@ export function GroupQuoteManager() {
                     <p className="text-xs text-slate-400 max-w-xs mx-auto">Seleccioná un tipo de servicio arriba para comenzar a estructurar los costos del grupo.</p>
                   </div>
                 ) : (
-                  quote.items.map((item, idx) => {
+                  quote.items.map((item) => {
                     const isExp = expandedItem === item.id
                     const provider = operators.find(o => o.id === item.providerId)
                     const eco = calculateItemEconomics(item)
@@ -1034,7 +1166,7 @@ export function GroupQuoteManager() {
                                  (item.details.description || item.type.toUpperCase())}
                               </h4>
                               <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                                Proveedor: <strong className="text-slate-800">{provider ? provider.name : 'Sin asignar'}</strong> · Modo: {item.economics.pricingModel === 'per_passenger' ? 'Por Pax' : 'Por Grupo Total'}
+                                Proveedor: <strong className="text-slate-800">{provider ? provider.name : 'Sin asignar'}</strong> · Liberados: <strong className="text-orange-600">{eco.itemLiberados} Pax</strong> ({eco.itemPaidPax} Pagantes)
                               </p>
                             </div>
                           </div>
@@ -1059,8 +1191,32 @@ export function GroupQuoteManager() {
                         {isExp && (
                           <div className="p-6 bg-slate-50/70 border-t border-slate-100 space-y-6">
                             
-                            {/* PROVEEDOR Y MODO DE COSTO */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {/* CAJA IA LECTURA AUTOMÁTICA DE VOUCHERS / TICKETS */}
+                            <div className="flex items-center justify-between bg-gradient-to-r from-sky-50 to-indigo-50/60 p-3.5 rounded-2xl border border-sky-200/80 gap-3 flex-wrap">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-sky-600 text-white flex items-center justify-center font-bold shrink-0">
+                                  <Sparkles className="w-4 h-4 animate-pulse" />
+                                </div>
+                                <div>
+                                  <span className="text-xs font-black text-slate-900 block uppercase tracking-wider">Cargar Datos de {item.type.toUpperCase()} con IA</span>
+                                  <span className="text-[11px] text-slate-500 font-medium">Hacé una captura (Win+Shift+S) y pegala (Ctrl+V) sobre esta tarjeta</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => item.type === 'flight' ? handlePasteFlightFromClipboard(item.id) : handlePasteVoucherFromClipboard(item.id, item.type)}
+                                  disabled={isParsingFlight === item.id || isParsingService === item.id}
+                                  className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                >
+                                  {(isParsingFlight === item.id || isParsingService === item.id) ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Clipboard className="w-3.5 h-3.5" />}
+                                  {(isParsingFlight === item.id || isParsingService === item.id) ? 'Analizando...' : 'Pegar Captura (IA)'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* PROVEEDOR, TARIFACIÓN Y REGLA DE LIBERADOS DE ESTE SERVICIO */}
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                               <div>
                                 <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Proveedor / Operador</label>
                                 <select
@@ -1069,7 +1225,7 @@ export function GroupQuoteManager() {
                                     ...prev,
                                     items: prev.items.map(it => it.id === item.id ? { ...it, providerId: e.target.value } : it)
                                   }))}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
                                 >
                                   <option value="">Seleccionar Proveedor...</option>
                                   {operators.map(op => <option key={op.id} value={op.id}>🏢 {op.name}</option>)}
@@ -1081,30 +1237,59 @@ export function GroupQuoteManager() {
                                 <select
                                   value={item.economics.pricingModel}
                                   onChange={e => updateItemEconomics(item.id, 'pricingModel', e.target.value)}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
                                 >
-                                  <option value="per_passenger">Por Pasajero (Multiplica por Pax Grupo)</option>
-                                  <option value="divided_total">Tarifa Total Grupo (Monto Global Fijo)</option>
+                                  <option value="per_passenger">Por Pasajero Pagante</option>
+                                  <option value="divided_total">Monto Global Fijo Grupo</option>
                                 </select>
                               </div>
 
                               <div>
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Costo Neto Unitario ({quote.currency})</label>
-                                <input
-                                  type="number"
-                                  value={item.economics.baseNetCost || ''}
-                                  onChange={e => updateItemEconomics(item.id, 'baseNetCost', parseFloat(e.target.value) || 0)}
-                                  placeholder="Ej: 450"
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-slate-900 outline-none"
-                                />
+                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Regla de Liberados (Servicio)</label>
+                                <select
+                                  value={item.economics.liberadosRule || 'none'}
+                                  onChange={e => updateItemEconomics(item.id, 'liberadosRule', e.target.value)}
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                >
+                                  <option value="none">Sin Liberados (0)</option>
+                                  <option value="1_10">1 cada 10 Pax (10+1)</option>
+                                  <option value="1_15">1 cada 15 Pax (15+1)</option>
+                                  <option value="1_20">1 cada 20 Pax (20+1)</option>
+                                  <option value="fixed">Fijo Manual (Cantidad)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                {item.economics.liberadosRule === 'fixed' ? (
+                                  <>
+                                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Cant. Liberados Fijos</label>
+                                    <input
+                                      type="number"
+                                      value={item.economics.liberadosCount || 0}
+                                      onChange={e => updateItemEconomics(item.id, 'liberadosCount', parseInt(e.target.value) || 0)}
+                                      className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                    />
+                                  </>
+                                ) : (
+                                  <>
+                                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Costo Neto Unitario ({quote.currency})</label>
+                                    <input
+                                      type="number"
+                                      value={item.economics.baseNetCost || ''}
+                                      onChange={e => updateItemEconomics(item.id, 'baseNetCost', parseFloat(e.target.value) || 0)}
+                                      placeholder="Ej: 450"
+                                      className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-black text-slate-900 outline-none"
+                                    />
+                                  </>
+                                )}
                               </div>
                             </div>
 
-                            {/* CAMPOS ESPECÍFICOS SEGÚN TIPO */}
+                            {/* CAMPOS DETALLADOS DE VUELOS */}
                             {item.type === 'flight' && (
                               <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-200">
                                 <h5 className="text-xs font-black text-slate-800 uppercase flex items-center gap-2">
-                                  <Plane className="w-4 h-4 text-sky-600" /> Detalle de Vuelo Grupal
+                                  <Plane className="w-4 h-4 text-sky-600" /> Itinerario Aéreo y Equipaje Grupal
                                 </h5>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <input
@@ -1116,17 +1301,18 @@ export function GroupQuoteManager() {
                                   <input
                                     value={item.details.bookingCode || ''}
                                     onChange={e => updateItemDetails(item.id, 'bookingCode', e.target.value)}
-                                    placeholder="Código PNR / Localizador de Grupo"
+                                    placeholder="PNR / Código de Reserva de Grupo"
                                     className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
                                   />
                                 </div>
                               </div>
                             )}
 
+                            {/* CAMPOS DETALLADOS DE HOTEL */}
                             {item.type === 'hotel' && (
                               <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-200">
                                 <h5 className="text-xs font-black text-slate-800 uppercase flex items-center gap-2">
-                                  <Hotel className="w-4 h-4 text-emerald-600" /> Detalle de Alojamiento Grupal
+                                  <Hotel className="w-4 h-4 text-emerald-600" /> Detalle de Alojamiento y Habitaciones
                                 </h5>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                   <input
@@ -1154,7 +1340,7 @@ export function GroupQuoteManager() {
                             {/* CÁLCULO FINANCIERO Y MARGEN DE ESTE SERVICIO */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200">
                               <div className="p-3 bg-slate-900 text-white rounded-xl text-center">
-                                <p className="text-[9.5px] font-black uppercase text-slate-400">Neto a Pagar a Proveedor</p>
+                                <p className="text-[9.5px] font-black uppercase text-slate-400">Neto a Pagar ({eco.itemPaidPax} Pagantes)</p>
                                 <p className="text-base font-black">{quote.currency} ${fmtVal(eco.netoAPagar)}</p>
                               </div>
                               <div className="p-3 bg-emerald-50 rounded-xl text-center">
@@ -1162,7 +1348,7 @@ export function GroupQuoteManager() {
                                 <p className="text-base font-black text-emerald-700">+{quote.currency} ${fmtVal(eco.ganancia)}</p>
                               </div>
                               <div className="p-3 bg-orange-50 rounded-xl text-center">
-                                <p className="text-[9.5px] font-black uppercase text-orange-600">Total a Cobrar Cliente</p>
+                                <p className="text-[9.5px] font-black uppercase text-orange-600">Total a Cobrar Servicio</p>
                                 <p className="text-base font-black text-orange-700">{quote.currency} ${fmtVal(eco.totalACobrar)}</p>
                               </div>
                             </div>
@@ -1176,7 +1362,7 @@ export function GroupQuoteManager() {
                 )}
               </div>
 
-              {/* COBROS Y PAGOS A PROVEEDORES DEL GRUPO (FINANCIERA & TESORERÍA) */}
+              {/* COBROS Y PAGOS A PROVEEDORES DEL GRUPO (FINANCIERA & TESORERÍA CON IA) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
                 {/* COBROS DEL GRUPO */}
@@ -1355,7 +1541,7 @@ export function GroupQuoteManager() {
                   <div className="bg-gradient-to-tr from-orange-500 to-amber-500 p-5 rounded-2xl text-white shadow-lg shadow-orange-500/20">
                     <p className="text-[10px] font-black uppercase text-orange-100">Precio Final por Pax Pagante</p>
                     <p className="text-2xl font-black">{quote.currency} ${fmtVal(totals.sellingPerPaidPax)}</p>
-                    <p className="text-[10px] text-orange-100 font-medium mt-1">Calculado sobre {paidPax} pagantes (+{liberatedPax} liberados)</p>
+                    <p className="text-[10px] text-orange-100 font-medium mt-1">Calculado sobre {totals.effectivePaidPax} pagantes (con liberados amortizados)</p>
                   </div>
                 </div>
 
