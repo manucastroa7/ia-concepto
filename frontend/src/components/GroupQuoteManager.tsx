@@ -1,49 +1,135 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { 
+    Plus, Trash2, Plane, Hotel, Users, ShieldCheck, Send, Save, History, Search, 
+    ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
+    Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
+    Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
+    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy, Bus, Compass, Utensils, Award, MessageSquare, Calculator
+} from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { 
-    Calculator, CheckCircle2, Copy, DollarSign, Plus, Save, Trash2, Users, X, 
-    Plane, Hotel, ShieldCheck, FileText, Clock, ChevronDown, Eye, History, ArrowRight,
-    Utensils, Bus, Compass, Wallet, MessageSquare, Send, XCircle
-} from 'lucide-react'
 
-// --- TYPES ---
-type Category = {
+// --- TIPOS DE DATOS ---
+
+export interface Segment {
   id: string
-  label: string
-  value: number | string
-  quantity: number | string
-  priceMode: string
+  from: string
+  to: string
+  flightNumber: string
+  departureDate: string
+  departureTime: string
+  arrivalDate?: string
+  arrivalTime?: string
+  stops?: string
+  layoverDetails?: string
 }
 
-type GroupService = {
+export interface Room {
   id: string
   type: string
-  description: string
-  providerId?: string
-  billingMode: string
-  netUnitCost: number | string
-  quantity: number | string
-  liberados: number | string
-  currency: string
-  commission: number | string
-  commissionMode: string
-  optional: boolean
-  notes: string
-  categories: Category[]
+  board: string
+  paxCount: number
+  price: number
 }
 
-type Payment = {
+export interface CustomExpense {
+  id: string
+  label: string
+  amount: number
+}
+
+export interface GroupItemDetails {
+  // Aéreos
+  airline?: string
+  bookingCode?: string
+  type?: 'ROUND_TRIP' | 'ONE_WAY' | 'MULTI'
+  costDividerMode?: 'per_passenger' | 'divided_total'
+  segments?: Segment[]
+  baggage?: {
+    hasHand?: boolean
+    handDesc?: string
+    hasCarryOn?: boolean
+    carryOnDesc?: string
+    hasChecked?: boolean
+    checkedDesc?: string
+  }
+
+  // Hoteles
+  hotelName?: string
+  confirmationNumber?: string
+  checkIn?: string
+  checkOut?: string
+  rooms?: Room[]
+  cancellationDate?: string
+
+  // Trenes
+  trainOperator?: string
+  trainNumber?: string
+  origin?: string
+  destination?: string
+  departureDate?: string
+  departureTime?: string
+  arrivalDate?: string
+  arrivalTime?: string
+  classType?: string
+  seatDetails?: string
+
+  // Traslados
+  isRoundTrip?: boolean
+  date?: string
+  time?: string
+
+  // Asistencia y Servicios
+  assistanceCompany?: string
+  documentNumber?: string
+  startDate?: string
+  endDate?: string
+  planType?: string
+  coverage?: string
+  serviceName?: string
+  description?: string
+}
+
+export interface GroupItemEconomics {
+  baseNetCost: number
+  adjustments: { id: string; label: string; type: 'percentage' | 'fixed'; value: number; impact: 'cost' | 'profit' }[]
+  pricingModel: 'per_passenger' | 'divided_total'
+  passengerCount: number
+  liberados: number
+  commissionType: 'percentage' | 'fixed'
+  commissionValue: number
+  totalComisionable?: number
+  comision?: number
+  iva?: number
+  gastosAdm?: number
+  suplementos?: number
+  customExpenses?: CustomExpense[]
+}
+
+export interface GroupItem {
+  id: string
+  type: 'flight' | 'hotel' | 'train' | 'transfer' | 'assistance' | 'service' | 'excursion' | 'meal'
+  providerId: string
+  title?: string
+  description?: string
+  details: GroupItemDetails
+  economics: GroupItemEconomics
+}
+
+export interface GroupPayment {
   id: string
   date: string
-  amount: number | string
+  amount: number
   method: string
   reference: string
   providerId?: string
+  passengerId?: string
 }
 
-type GroupQuoteForm = {
-  id: string | null
+export type LiberadosRule = 'none' | '1_10' | '1_15' | '1_20' | 'fixed'
+
+export interface GroupQuoteState {
+  id?: string
   quoteNumber: string
   groupName: string
   clientName: string
@@ -52,326 +138,523 @@ type GroupQuoteForm = {
   startDate: string
   endDate: string
   validUntil: string
-  pax: number | string
-  currency: string
-  globalCommission: number | string
-  commissionMode: string
-  priceOverride: number | string
-  status: string
+  pax: number
+  liberadosRule: LiberadosRule
+  fixedLiberados: number
+  currency: 'USD' | 'ARS' | 'EUR'
+  globalCommission: number
+  commissionMode: 'percent' | 'fixed'
+  priceOverride?: number | string
+  status: 'draft' | 'sent' | 'confirmed' | 'lost'
   includes: string
   excludes: string
   observations: string
   clientNotes: string
-  services: GroupService[]
-  payments: Payment[]
-  providerPayments: Payment[]
+  items: GroupItem[]
+  payments: GroupPayment[]
+  providerPayments: GroupPayment[]
 }
 
-// --- UTILS ---
-const today = () => new Date().toISOString().slice(0, 10)
-const uid = () => Math.random().toString(36).slice(2, 11)
-const money = (value: number) => value.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-const num = (value: unknown) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-const emptyService = (type = 'hotel'): GroupService => ({
-  id: uid(),
-  type,
-  description: type === 'hotel' ? 'Alojamiento Grupal' : type === 'transport' ? 'Pasajes Aéreos / Bus' : type === 'excursion' ? 'Excursión / Tour Privado' : type === 'meal' ? 'Servicio de Gastronomía' : 'Servicio Adicional',
-  providerId: '',
-  billingMode: 'per_person',
-  netUnitCost: 0,
-  quantity: 1,
-  liberados: 0,
-  currency: 'USD',
-  commission: 10,
-  commissionMode: 'percent',
-  optional: false,
-  notes: '',
-  categories: [],
-})
-
-const emptyForm = (): GroupQuoteForm => ({
-  id: null,
-  quoteNumber: '',
-  groupName: '',
-  clientName: '',
-  project: '',
-  destination: '',
-  startDate: '',
-  endDate: '',
-  validUntil: '',
-  pax: 20,
-  currency: 'USD',
-  globalCommission: 15,
-  commissionMode: 'percent',
-  priceOverride: '',
-  status: 'draft',
-  includes: '✓ Hotelería con régimen especificado\n✓ Traslados privados para todo el grupo\n✓ Guía acompañante en destino',
-  excludes: '✗ Gastos personales y propinas\n✗ Comidas no especificadas',
-  observations: '',
-  clientNotes: '',
-  services: [],
-  payments: [],
-  providerPayments: [],
-})
-
-const normalizeQuote = (quote: any): GroupQuoteForm => ({
-  ...emptyForm(),
-  ...quote,
-  id: quote.id || null,
-  quoteNumber: quote.quoteNumber || '',
-  groupName: quote.groupName || '',
-  clientName: quote.clientName || '',
-  project: quote.project || '',
-  destination: quote.destination || '',
-  startDate: quote.startDate || '',
-  endDate: quote.endDate || '',
-  validUntil: quote.validUntil || '',
-  currency: quote.currency || 'USD',
-  priceOverride: quote.priceOverride ?? '',
-  services: Array.isArray(quote.services) ? quote.services.map((service: any) => ({
-    ...emptyService(service.type || 'hotel'),
-    ...service,
-    id: service.id || uid(),
-    categories: Array.isArray(service.categories) ? service.categories.map((category: any) => ({
-      id: category.id || uid(),
-      label: category.label || '',
-      value: category.value ?? 0,
-      quantity: category.quantity ?? 0,
-      priceMode: category.priceMode || 'fixed',
-    })) : [],
-  })) : [],
-  payments: Array.isArray(quote.payments) ? quote.payments.map((payment: any) => ({ id: payment.id || uid(), date: payment.date || today(), amount: payment.amount ?? 0, method: payment.method || 'transfer', reference: payment.reference || '' })) : [],
-  providerPayments: Array.isArray(quote.providerPayments) ? quote.providerPayments.map((payment: any) => ({ id: payment.id || uid(), date: payment.date || today(), amount: payment.amount ?? 0, method: payment.method || 'transfer', reference: payment.reference || '', providerId: payment.providerId || '' })) : [],
-})
-
-const calculateGroup = (quote: GroupQuoteForm) => {
-  const pax = Math.max(0, Math.round(num(quote.pax)))
-  let totalNet = 0
-  let serviceProfit = 0
-  let liberatedPax = 0
-
-  quote.services.forEach(service => {
-    const liberados = Math.max(0, Math.round(num(service.liberados)))
-    const zeroCategoryPax = service.categories.reduce((sum, category) => {
-      const label = String(category.label || '').toLowerCase()
-      const isLiberado = label.includes('liberado') || num(category.value) === 0
-      return isLiberado ? sum + Math.max(0, Math.round(num(category.quantity))) : sum
-    }, 0)
-    liberatedPax = Math.max(liberatedPax, liberados, zeroCategoryPax)
-
-    const categoryTotal = service.categories.reduce((sum, category) => sum + num(category.value) * Math.max(0, num(category.quantity)), 0)
-    let serviceNet = 0
-    if (service.categories.length > 0) {
-      serviceNet = categoryTotal
-    } else if (service.billingMode === 'per_group') {
-      serviceNet = num(service.netUnitCost) * Math.max(1, num(service.quantity) || 1)
-    } else {
-      serviceNet = num(service.netUnitCost) * Math.max(0, pax - liberados)
-    }
-
-    const commission = num(service.commission)
-    serviceProfit += service.commissionMode === 'fixed' ? commission : serviceNet * (commission / 100)
-    totalNet += serviceNet
-  })
-
-  const paidPax = Math.max(0, pax - liberatedPax)
-  const override = num(quote.priceOverride)
-  if (override > 0) {
-    return {
-      paidPax,
-      liberatedPax,
-      totalNet,
-      totalSelling: override * (paidPax || pax || 1),
-      totalPerPerson: override,
-      totalProfit: (override * (paidPax || pax || 1)) - totalNet
-    }
-  }
-
-  const globalCommission = num(quote.globalCommission)
-  const globalProfit = quote.commissionMode === 'fixed'
-    ? globalCommission * (paidPax || 1)
-    : totalNet * (globalCommission / 100)
-  const totalSelling = Math.ceil(totalNet + serviceProfit + globalProfit)
-  return {
-    paidPax,
-    liberatedPax,
-    totalNet,
-    totalSelling,
-    totalProfit: totalSelling - totalNet,
-    totalPerPerson: paidPax > 0 ? Math.ceil(totalSelling / paidPax) : totalSelling,
-  }
+const uid = () => Math.random().toString(36).substring(2, 9)
+const fmtVal = (v: number) => (Number(v) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtDate = (d?: string) => {
+  if (!d) return ''
+  const [y, m, day] = d.split('-')
+  return `${day}/${m}/${y}`
 }
 
 export function GroupQuoteManager() {
   const [viewMode, setViewMode] = useState<'builder' | 'list'>('builder')
-  const [quotes, setQuotes] = useState<GroupQuoteForm[]>([])
-  const [operators, setOperators] = useState<any[]>([])
-  const [form, setForm] = useState<GroupQuoteForm>(emptyForm())
-  const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [whatsappText, setWhatsappText] = useState('')
-  const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'confirmed' | 'lost'>('all')
 
-  const totals = useMemo(() => calculateGroup(form), [form])
+  const [quote, setQuote] = useState<GroupQuoteState>({
+    quoteNumber: '',
+    groupName: '',
+    clientName: '',
+    project: '',
+    destination: '',
+    startDate: '',
+    endDate: '',
+    validUntil: '',
+    pax: 20,
+    liberadosRule: '1_15',
+    fixedLiberados: 0,
+    currency: 'USD',
+    globalCommission: 15,
+    commissionMode: 'percent',
+    priceOverride: '',
+    status: 'draft',
+    includes: '✓ Hotelería con régimen especificado\n✓ Traslados privados para todo el grupo\n✓ Guía acompañante en destino',
+    excludes: '✗ Gastos personales y propinas\n✗ Comidas no especificadas',
+    observations: '',
+    clientNotes: '',
+    items: [],
+    payments: [],
+    providerPayments: []
+  })
+
+  const [expandedItem, setExpandedItem] = useState<string | null>(null)
+  const [operators, setOperators] = useState<any[]>([])
+  const [passengers, setPassengers] = useState<any[]>([])
+  const [historyQuotes, setHistoryQuotes] = useState<any[]>([])
+  const [expandedPayments, setExpandedPayments] = useState<Record<string, boolean>>({})
+  const [isParsingPayment, setIsParsingPayment] = useState<string | null>(null)
+  const [isParsingFlight, setIsParsingFlight] = useState<string | null>(null)
+  const [isParsingService, setIsParsingService] = useState<string | null>(null)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved'>('idle')
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [whatsappText, setWhatsappText] = useState('')
+  const isFirstMount = useRef(true)
 
   useEffect(() => {
-    fetchData()
+    fetchOperators()
+    fetchHistory()
+    fetchPassengers()
   }, [])
 
-  const fetchData = async () => {
+  // Autoguardado debounced (1.5s)
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false
+      return
+    }
+
+    const hasData = quote.id || quote.groupName || quote.clientName || quote.destination || quote.items.length > 0
+    if (!hasData) return
+
+    setAutoSaveStatus('unsaved')
+    const timer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving')
+        localStorage.setItem('group_quote_draft', JSON.stringify(quote))
+
+        if (quote.id) {
+          await axios.patch(`/api/group-quotes/${quote.id}`, quote)
+          fetchHistory()
+        } else if (quote.groupName || quote.clientName) {
+          const res = await axios.post('/api/group-quotes', quote)
+          if (res.data?.id) {
+            setQuote(prev => ({ ...prev, id: res.data.id, quoteNumber: res.data.quoteNumber || prev.quoteNumber }))
+            fetchHistory()
+          }
+        }
+        setAutoSaveStatus('saved')
+      } catch (err) {
+        console.error('Error en autoguardado de grupo:', err)
+        setAutoSaveStatus('saved')
+      }
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [quote])
+
+  const fetchOperators = async () => {
     try {
-      const [quoteRes, operatorRes] = await Promise.all([
-        axios.get('/api/group-quotes'),
-        axios.get('/api/operators'),
-      ])
-      const loadedQuotes = (quoteRes.data || []).map(normalizeQuote)
-      setQuotes(loadedQuotes)
-      setOperators(operatorRes.data || [])
-      if (loadedQuotes.length > 0) setForm(loadedQuotes[0])
-    } catch (error) {
-      toast.error('Error al cargar cotizaciones grupales')
-    } finally {
-      setLoading(false)
+      const res = await axios.get('/api/operators')
+      setOperators(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setOperators([])
     }
   }
 
-  const updateField = (key: keyof GroupQuoteForm, value: any) => {
-    setForm(current => ({ ...current, [key]: value }))
+  const fetchPassengers = async () => {
+    try {
+      const res = await axios.get('/api/passengers')
+      setPassengers(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setPassengers([])
+    }
   }
 
-  const updateService = (serviceId: string, key: keyof GroupService, value: any) => {
-    setForm(current => ({
-      ...current,
-      services: current.services.map(service => service.id === serviceId ? { ...service, [key]: value } : service),
+  const fetchHistory = async () => {
+    try {
+      const res = await axios.get('/api/group-quotes')
+      setHistoryQuotes(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setHistoryQuotes([])
+    }
+  }
+
+  // --- MOTOR DE CÁLCULO DE LIBERADOS Y ECONOMÍA DEL GRUPO ---
+  const liberatedPax = useMemo(() => {
+    const totalPax = Math.max(1, Number(quote.pax) || 1)
+    if (quote.liberadosRule === '1_10') return Math.floor(totalPax / 10)
+    if (quote.liberadosRule === '1_15') return Math.floor(totalPax / 15)
+    if (quote.liberadosRule === '1_20') return Math.floor(totalPax / 20)
+    if (quote.liberadosRule === 'fixed') return Math.max(0, Number(quote.fixedLiberados) || 0)
+    return 0
+  }, [quote.pax, quote.liberadosRule, quote.fixedLiberados])
+
+  const paidPax = useMemo(() => {
+    const totalPax = Math.max(1, Number(quote.pax) || 1)
+    return Math.max(1, totalPax - liberatedPax)
+  }, [quote.pax, liberatedPax])
+
+  // Cálculo individual de cada item
+  const calculateItemEconomics = (item: GroupItem) => {
+    if (!item || !item.economics) {
+      return { totalCost: 0, totalProfit: 0, totalSale: 0, netoAPagar: 0, ganancia: 0, totalACobrar: 0 }
+    }
+    const { baseNetCost = 0, adjustments = [], pricingModel, commissionType = 'percentage', commissionValue = 0, totalComisionable, comision, iva, gastosAdm, suplementos, customExpenses } = item.economics
+    
+    let netoAPagar = 0
+    let ganancia = 0
+    let totalACobrar = 0
+    const sumCustomExpenses = (customExpenses || []).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0)
+
+    // Para grupos: por defecto si es por persona se multiplica por el total de pax del grupo
+    const isPerPax = pricingModel === 'per_passenger' || item.details?.costDividerMode === 'per_passenger'
+    const pCount = isPerPax ? Math.max(1, Number(quote.pax) || 1) : 1
+
+    if (totalComisionable && totalComisionable > 0) {
+      const com = Number(comision) || 0
+      const iv = Number(iva) || 0
+      const gAdm = Number(gastosAdm) || 0
+      const sup = Number(suplementos) || 0
+
+      netoAPagar = (Number(totalComisionable) - com + iv + gAdm + sup + sumCustomExpenses) * pCount
+      totalACobrar = (Number(totalComisionable) + sup + iv + gAdm + sumCustomExpenses) * pCount
+      ganancia = (totalACobrar - netoAPagar)
+    } else {
+      let totalCost = baseNetCost + sumCustomExpenses
+      let totalProfit = 0
+
+      adjustments?.forEach(adj => {
+        const val = adj.type === 'percentage' ? (baseNetCost * (adj.value / 100)) : adj.value
+        if (adj.impact === 'cost') totalCost += val
+        if (adj.impact === 'profit') totalProfit += val
+      })
+
+      let comm = commissionType === 'percentage' ? (baseNetCost * (commissionValue / 100)) : commissionValue
+      totalProfit += comm
+
+      let saleBeforePax = totalCost + totalProfit
+      netoAPagar = totalCost * pCount
+      ganancia = totalProfit * pCount
+      totalACobrar = saleBeforePax * pCount
+    }
+
+    return { totalCost: netoAPagar, totalProfit: ganancia, totalSale: totalACobrar, netoAPagar, ganancia, totalACobrar }
+  }
+
+  // Totales consolidados del Grupo
+  const totals = useMemo(() => {
+    let totalNet = 0
+    let serviceProfit = 0
+    let totalSale = 0
+
+    quote.items.forEach(it => {
+      const eco = calculateItemEconomics(it)
+      totalNet += eco.netoAPagar
+      serviceProfit += eco.ganancia
+      totalSale += eco.totalACobrar
+    })
+
+    const override = Number(quote.priceOverride) || 0
+    let totalSelling = 0
+    let sellingPerPaidPax = 0
+
+    if (override > 0) {
+      sellingPerPaidPax = override
+      totalSelling = override * paidPax
+    } else {
+      const globalComm = Number(quote.globalCommission) || 0
+      const globalProfit = quote.commissionMode === 'fixed' ? (globalComm * paidPax) : (totalNet * (globalComm / 100))
+      totalSelling = Math.ceil(totalNet + serviceProfit + globalProfit)
+      sellingPerPaidPax = paidPax > 0 ? Math.ceil(totalSelling / paidPax) : totalSelling
+    }
+
+    const totalCollected = (quote.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    const totalProviderPaid = (quote.providerPayments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+    const pendingCollection = Math.max(0, totalSelling - totalCollected)
+    const pendingProviderPayment = Math.max(0, totalNet - totalProviderPaid)
+    const realCashProfit = totalCollected - totalProviderPaid
+    const totalProfit = totalSelling - totalNet
+
+    return {
+      totalNet,
+      totalProfit,
+      totalSelling,
+      sellingPerPaidPax,
+      totalCollected,
+      pendingCollection,
+      totalProviderPaid,
+      pendingProviderPayment,
+      realCashProfit
+    }
+  }, [quote, paidPax])
+
+  // Desglose por Operadores
+  const providerSummaryMap = useMemo(() => {
+    const map: Record<string, { id: string; name: string; totalNet: number; totalPaid: number }> = {}
+
+    quote.items.forEach(it => {
+      const eco = calculateItemEconomics(it)
+      const opId = it.providerId || 'unassigned'
+      const opName = operators.find(o => o.id === opId)?.name || 'Sin Proveedor'
+
+      if (!map[opId]) {
+        map[opId] = { id: opId, name: opName, totalNet: 0, totalPaid: 0 }
+      }
+      map[opId].totalNet += eco.netoAPagar
+    })
+
+    ;(quote.providerPayments || []).forEach(p => {
+      const opId = p.providerId || 'unassigned'
+      if (map[opId]) {
+        map[opId].totalPaid += (Number(p.amount) || 0)
+      } else if (opId !== 'unassigned') {
+        const opName = operators.find(o => o.id === opId)?.name || 'Proveedor'
+        map[opId] = { id: opId, name: opName, totalNet: 0, totalPaid: Number(p.amount) || 0 }
+      }
+    })
+
+    return map
+  }, [quote.items, quote.providerPayments, operators])
+
+  const usedOperators = useMemo(() => {
+    const set = new Set<string>()
+    quote.items.forEach(it => { if (it.providerId) set.add(it.providerId) })
+    return operators.filter(op => set.has(op.id))
+  }, [quote.items, operators])
+
+  // --- MÉTODOS DE MANIPULACIÓN DE SERVICIOS ---
+  const handleAddItem = (type: GroupItem['type']) => {
+    const newItem: GroupItem = {
+      id: uid(),
+      type,
+      providerId: '',
+      details: type === 'flight' ? {
+        airline: '',
+        bookingCode: '',
+        type: 'ROUND_TRIP',
+        costDividerMode: 'per_passenger',
+        segments: [{ id: '1', from: '', to: '', flightNumber: '', departureDate: '', departureTime: '', arrivalDate: '', arrivalTime: '', stops: 'Directo' }],
+        baggage: { hasHand: true, handDesc: 'Mochila', hasCarryOn: true, carryOnDesc: '10kg', hasChecked: true, checkedDesc: '23kg' }
+      } : type === 'hotel' ? {
+        hotelName: '',
+        confirmationNumber: '',
+        checkIn: '',
+        checkOut: '',
+        rooms: [{ id: '1', type: 'Doble Standard', board: 'Desayuno Buffet', paxCount: 2, price: 0 }]
+      } : type === 'train' ? {
+        trainOperator: '',
+        trainNumber: '',
+        origin: '',
+        destination: '',
+        departureDate: '',
+        departureTime: '',
+        classType: 'Primera / Confort'
+      } : type === 'transfer' ? {
+        origin: '',
+        destination: '',
+        isRoundTrip: true,
+        date: '',
+        time: ''
+      } : {
+        description: '',
+        confirmationNumber: ''
+      },
+      economics: {
+        baseNetCost: 0,
+        adjustments: [],
+        pricingModel: 'per_passenger',
+        passengerCount: quote.pax || 20,
+        liberados: 0,
+        commissionType: 'percentage',
+        commissionValue: 10,
+        customExpenses: []
+      }
+    }
+    setQuote(prev => ({ ...prev, items: [...prev.items, newItem] }))
+    setExpandedItem(newItem.id)
+    toast.success(`Servicio de ${type.toUpperCase()} agregado al grupo`)
+  }
+
+  const removeItem = (itemId: string) => {
+    setQuote(prev => ({ ...prev, items: prev.items.filter(it => it.id !== itemId) }))
+    toast.success('Servicio eliminado')
+  }
+
+  const updateItemDetails = (itemId: string, key: string, value: any) => {
+    setQuote(prev => ({
+      ...prev,
+      items: prev.items.map(it => it.id === itemId ? { ...it, details: { ...it.details, [key]: value } } : it)
     }))
   }
 
-  const updateCategory = (serviceId: string, categoryId: string, key: keyof Category, value: any) => {
-    setForm(current => ({
-      ...current,
-      services: current.services.map(service => service.id === serviceId ? {
-        ...service,
-        categories: service.categories.map(category => category.id === categoryId ? { ...category, [key]: value } : category),
-      } : service),
+  const updateItemEconomics = (itemId: string, key: string, value: any) => {
+    setQuote(prev => ({
+      ...prev,
+      items: prev.items.map(it => it.id === itemId ? { ...it, economics: { ...it.economics, [key]: value } } : it)
     }))
   }
 
-  const addService = (type: string) => {
-    const s = emptyService(type)
-    setForm(current => ({ ...current, services: [...current.services, s] }))
-    setExpandedServiceId(s.id)
-    toast.success('Servicio agregado al grupo')
+  // --- LECTURA DE COMPROBANTES CON IA ---
+  const handleParsePaymentReceipt = async (paymentType: 'payments' | 'providerPayments', paymentId: string, file: File) => {
+    setIsParsingPayment(paymentId)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await axios.post('/api/manual-quotes/parse-payment-receipt', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      const parsed = res.data
+      if (parsed) {
+        let formattedDate = ''
+        if (parsed.date && typeof parsed.date === 'string') {
+          const str = parsed.date.trim()
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+            formattedDate = str
+          } else {
+            const match = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/)
+            if (match) {
+              const d = match[1].padStart(2, '0')
+              const m = match[2].padStart(2, '0')
+              let y = match[3]
+              if (y.length === 2) y = `20${y}`
+              formattedDate = `${y}-${m}-${d}`
+            }
+          }
+        }
+
+        const amt = typeof parsed.amount === 'number' ? parsed.amount : (parseFloat(parsed.amount) || 0)
+        const ref = parsed.reference || ''
+        const methodVal = parsed.method || 'transfer'
+
+        setExpandedPayments(prev => ({ ...prev, [paymentId]: true }))
+
+        setQuote(prev => ({
+          ...prev,
+          [paymentType]: prev[paymentType].map(p => {
+            if (p.id === paymentId) {
+              return {
+                ...p,
+                amount: amt > 0 ? amt : p.amount,
+                date: formattedDate || p.date,
+                reference: ref || p.reference,
+                method: methodVal || p.method
+              }
+            }
+            return p
+          })
+        }))
+
+        if (paymentType === 'providerPayments' && parsed.recipientName) {
+          const recUpper = String(parsed.recipientName).toUpperCase()
+          const matchedOp = operators.find(op => op.name.toUpperCase().includes(recUpper) || recUpper.includes(op.name.toUpperCase()))
+          if (matchedOp) {
+            setQuote(prev => ({
+              ...prev,
+              providerPayments: prev.providerPayments.map(p => p.id === paymentId ? { ...p, providerId: matchedOp.id } : p)
+            }))
+            toast.success(`Proveedor detectado: ${matchedOp.name}`)
+          }
+        }
+
+        toast.success(`Comprobante procesado con IA: $${amt} (Ref: ${ref || 'Sin ref'})`, { icon: '🤖' })
+      }
+    } catch {
+      toast.error('Error al analizar la imagen del comprobante de pago')
+    } finally {
+      setIsParsingPayment(null)
+    }
   }
 
-  const addCategory = (serviceId: string) => {
-    setForm(current => ({
-      ...current,
-      services: current.services.map(service => service.id === serviceId ? {
-        ...service,
-        categories: [...service.categories, { id: uid(), label: 'Categoría Pax', value: 0, quantity: 1, priceMode: 'fixed' }],
-      } : service),
-    }))
-  }
-
-  const removeCategory = (serviceId: string, categoryId: string) => {
-    setForm(current => ({
-      ...current,
-      services: current.services.map(service => service.id === serviceId ? {
-        ...service,
-        categories: service.categories.filter(category => category.id !== categoryId),
-      } : service),
-    }))
-  }
-
-  const updatePayment = (kind: 'payments' | 'providerPayments', paymentId: string, key: keyof Payment, value: any) => {
-    setForm(current => ({
-      ...current,
-      [kind]: current[kind].map(payment => payment.id === paymentId ? { ...payment, [key]: value } : payment),
-    }))
+  const handlePastePaymentFromClipboard = async (paymentType: 'payments' | 'providerPayments', paymentId: string) => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        toast.error('Presioná Ctrl + V para pegar la captura del comprobante')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'comprobante-pago.png', { type: imageType })
+          toast.loading('Analizando comprobante con IA...', { id: 'paste-payment' })
+          await handleParsePaymentReceipt(paymentType, paymentId, file)
+          toast.dismiss('paste-payment')
+          return
+        }
+      }
+      toast.error('No se encontró ninguna imagen en el portapapeles. Hacé una captura (Win+Shift+S) e intentá de nuevo.')
+    } catch {
+      toast.error('Copiá la imagen del comprobante e intentá de nuevo')
+    }
   }
 
   const addPayment = (kind: 'payments' | 'providerPayments') => {
-    setForm(current => ({
-      ...current,
-      [kind]: [...current[kind], { id: uid(), date: today(), amount: 0, method: 'transfer', reference: '', providerId: '' }],
-    }))
-  }
-
-  const removePayment = (kind: 'payments' | 'providerPayments', paymentId: string) => {
-    setForm(current => ({
-      ...current,
-      [kind]: current[kind].filter(payment => payment.id !== paymentId),
-    }))
-  }
-
-  const saveQuote = async (event?: FormEvent) => {
-    if (event) event.preventDefault()
-    setSaving(true)
-    try {
-      const payload = {
-        ...form,
-        totalNet: totals.totalNet,
-        totalSelling: totals.totalSelling,
-        totalPerPerson: totals.totalPerPerson,
-      }
-      const response = form.id
-        ? await axios.patch(`/api/group-quotes/${form.id}`, payload)
-        : await axios.post('/api/group-quotes', payload)
-      const saved = normalizeQuote(response.data)
-      setForm(saved)
-      setQuotes(current => [saved, ...current.filter(quote => quote.id !== saved.id)])
-      toast.success('Cotización grupal guardada exitosamente')
-    } catch (error) {
-      toast.error('Error al guardar cotización grupal')
-    } finally {
-      setSaving(false)
+    const newP: GroupPayment = {
+      id: uid(),
+      date: new Date().toISOString().slice(0, 10),
+      amount: 0,
+      method: 'transfer',
+      reference: ''
     }
+    setExpandedPayments(prev => ({ ...prev, [newP.id]: true }))
+    setQuote(prev => ({ ...prev, [kind]: [...prev[kind], newP] }))
   }
 
-  const deleteQuote = async () => {
-    if (!form.id || !confirm('¿Seguro que querés eliminar esta cotización grupal?')) return
+  const updatePayment = (kind: 'payments' | 'providerPayments', id: string, key: keyof GroupPayment, value: any) => {
+    setQuote(prev => ({
+      ...prev,
+      [kind]: prev[kind].map(p => p.id === id ? { ...p, [key]: value } : p)
+    }))
+  }
+
+  const removePayment = (kind: 'payments' | 'providerPayments', id: string) => {
+    setQuote(prev => ({
+      ...prev,
+      [kind]: prev[kind].filter(p => p.id !== id)
+    }))
+  }
+
+  const saveGroupQuote = async () => {
     try {
-      await axios.delete(`/api/group-quotes/${form.id}`)
-      const remaining = quotes.filter(quote => quote.id !== form.id)
-      setQuotes(remaining)
-      setForm(remaining[0] || emptyForm())
-      toast.success('Cotización grupal eliminada')
-    } catch (error) {
-      toast.error('Error al eliminar cotización')
+      if (quote.id) {
+        await axios.patch(`/api/group-quotes/${quote.id}`, quote)
+        toast.success('Cotización de grupo actualizada')
+      } else {
+        const res = await axios.post('/api/group-quotes', quote)
+        if (res.data?.id) {
+          setQuote(prev => ({ ...prev, id: res.data.id, quoteNumber: res.data.quoteNumber || prev.quoteNumber }))
+          toast.success('Cotización de grupo guardada en CRM')
+        }
+      }
+      fetchHistory()
+    } catch {
+      toast.error('Error al guardar cotización de grupo')
     }
   }
 
   const generateWhatsapp = async () => {
     try {
-      const response = await axios.post('/api/group-quotes/generate-whatsapp', { quoteData: form })
-      const text = response.data.text || ''
+      const res = await axios.post('/api/group-quotes/generate-whatsapp', { quoteData: quote })
+      const text = res.data.text || ''
       setWhatsappText(text)
       await navigator.clipboard?.writeText(text)
-      toast.success('Itinerario para WhatsApp copiado al portapapeles')
-    } catch (error) {
+      toast.success('Itinerario copiado al portapapeles para WhatsApp')
+    } catch {
       toast.error('Error al generar texto para WhatsApp')
     }
   }
 
-  const totalCollected = form.payments.reduce((sum, payment) => sum + num(payment.amount), 0)
-  const totalProviderPaid = form.providerPayments.reduce((sum, payment) => sum + num(payment.amount), 0)
-
-  const handleSelectQuote = (q: GroupQuoteForm) => {
-    setForm(q)
-    setViewMode('builder')
-    setWhatsappText('')
-    toast.success(`Grupo cargado: ${q.groupName || 'Cotización Grupal'}`)
-  }
-
-  const handleCreateNewGroup = () => {
-    setForm(emptyForm())
-    setViewMode('builder')
-    setWhatsappText('')
-  }
+  const filteredQuotes = useMemo(() => {
+    return historyQuotes.filter(q => {
+      if (statusFilter !== 'all' && q.status !== statusFilter) return false
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim()
+        const gName = (q.groupName || '').toLowerCase()
+        const cName = (q.clientName || '').toLowerCase()
+        const dest = (q.destination || '').toLowerCase()
+        return gName.includes(query) || cName.includes(query) || dest.includes(query)
+      }
+      return true
+    })
+  }, [historyQuotes, statusFilter, searchQuery])
 
   return (
     <div className="space-y-8 pb-24">
@@ -385,7 +668,7 @@ export function GroupQuoteManager() {
               viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            <History className="w-4 h-4" /> Historial de Grupos ({quotes.length})
+            <History className="w-4 h-4" /> Historial de Grupos ({historyQuotes.length})
           </button>
           <button
             onClick={() => setViewMode('builder')}
@@ -393,122 +676,138 @@ export function GroupQuoteManager() {
               viewMode === 'builder' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
-            <Plus className="w-4 h-4" /> {form.id ? 'Editando Cotización Grupal' : 'Nueva Cotización Grupal'}
+            <Plus className="w-4 h-4" /> {quote.id ? 'Editando Cotización Grupal' : 'Nueva Cotización Grupal'}
           </button>
         </div>
 
         <div className="flex items-center gap-3">
+          {autoSaveStatus === 'saving' && <span className="text-xs font-bold text-amber-600 animate-pulse">Guardando...</span>}
+          {autoSaveStatus === 'saved' && <span className="text-xs font-bold text-emerald-600">✓ Guardado</span>}
           <button onClick={generateWhatsapp} className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-black text-xs uppercase tracking-wider rounded-xl border border-emerald-200 transition-all flex items-center gap-2 cursor-pointer shadow-xs">
             <MessageSquare className="w-4 h-4" /> Copiar WhatsApp
           </button>
-          {form.id && (
-            <button onClick={deleteQuote} className="px-4 py-2.5 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 font-black text-xs uppercase tracking-wider rounded-xl border border-red-200 transition-all flex items-center gap-2 cursor-pointer shadow-xs">
-              <Trash2 className="w-4 h-4" /> Eliminar
-            </button>
-          )}
         </div>
       </div>
 
       {viewMode === 'list' ? (
-        /* VISTA LISTADO DE GRUPOS */
+        /* VISTA HISTORIAL DE GRUPOS */
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
             <div>
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Listado de Cotizaciones Grupales</h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Gestión integral de viajes grupales, giras de estudios, eventos y salidas acompañadas.</p>
+              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Historial de Cotizaciones Grupales</h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">Gestión avanzada de contingentes, giras, viajes estudiantiles y salidas de grupo.</p>
             </div>
-            <button
-              onClick={handleCreateNewGroup}
-              className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
-            >
-              <Plus className="w-4 h-4" /> Crear Nueva Cotización Grupal
-            </button>
+            
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por grupo, cliente o destino..."
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 w-64 outline-none"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  setQuote({
+                    quoteNumber: '',
+                    groupName: '',
+                    clientName: '',
+                    project: '',
+                    destination: '',
+                    startDate: '',
+                    endDate: '',
+                    validUntil: '',
+                    pax: 20,
+                    liberadosRule: '1_15',
+                    fixedLiberados: 0,
+                    currency: 'USD',
+                    globalCommission: 15,
+                    commissionMode: 'percent',
+                    priceOverride: '',
+                    status: 'draft',
+                    includes: '✓ Hotelería con régimen especificado\n✓ Traslados privados para todo el grupo',
+                    excludes: '✗ Gastos personales\n✗ Comidas no especificadas',
+                    observations: '',
+                    clientNotes: '',
+                    items: [],
+                    payments: [],
+                    providerPayments: []
+                  })
+                  setViewMode('builder')
+                }}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" /> Crear Nueva Cotización Grupal
+              </button>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="py-20 text-center">
-              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Cargando grupos...</p>
-            </div>
-          ) : quotes.length === 0 ? (
-            <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl p-8 space-y-2">
-              <Calculator className="w-12 h-12 text-slate-300 mx-auto" />
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">No hay cotizaciones grupales creadas</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">Creá tu primera cotización grupal para desglosar liberados, comisiones y costos por pax.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {quotes.map(q => {
-                const qTotals = calculateGroup(q)
-                const ST_CFG: any = {
-                  draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600' },
-                  sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-700' },
-                  confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-700' },
-                  lost: { label: 'Perdida', cls: 'bg-red-100 text-red-700' }
-                }
-                const st = ST_CFG[q.status] || ST_CFG.draft
-
-                return (
-                  <div
-                    key={q.id || q.quoteNumber}
-                    onClick={() => handleSelectQuote(q)}
-                    className="p-5 rounded-2xl border border-slate-200/80 hover:border-orange-300 transition-all hover:shadow-md bg-white flex flex-col justify-between space-y-4 cursor-pointer group"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.quoteNumber || 'REF: GRUPO'}</span>
-                        <span className={`text-[9.5px] font-black uppercase px-2.5 py-0.5 rounded-md ${st.cls}`}>{st.label}</span>
-                      </div>
-                      <h3 className="font-black text-slate-900 text-base group-hover:text-orange-600 transition-colors uppercase tracking-tight">
-                        {q.groupName || q.clientName || 'Grupo sin nombre'}
-                      </h3>
-                      <p className="text-xs text-slate-500 font-semibold mt-1">
-                        Destino: <strong className="text-slate-800">{q.destination || 'Por definir'}</strong> · {q.pax || 0} Pasajeros
-                      </p>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta por Pax</p>
-                        <p className="font-black text-orange-600 text-base leading-tight">{q.currency} {money(qTotals.totalPerPerson)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total Grupo</p>
-                        <p className="font-black text-slate-900 text-xs">{q.currency} {money(qTotals.totalSelling)}</p>
-                      </div>
-                    </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredQuotes.map(q => (
+              <div
+                key={q.id}
+                onClick={() => {
+                  setQuote(q)
+                  setViewMode('builder')
+                  toast.success(`Grupo cargado: ${q.groupName || 'Sin Nombre'}`)
+                }}
+                className="p-5 rounded-2xl border border-slate-200/80 hover:border-orange-300 transition-all hover:shadow-md bg-white flex flex-col justify-between space-y-4 cursor-pointer group"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.quoteNumber || 'REF: GRUPO'}</span>
+                    <span className="text-[9.5px] font-black uppercase px-2.5 py-0.5 rounded-md bg-orange-100 text-orange-700">{q.status}</span>
                   </div>
-                )
-              })}
-            </div>
-          )}
+                  <h3 className="font-black text-slate-900 text-base group-hover:text-orange-600 transition-colors uppercase tracking-tight">
+                    {q.groupName || q.clientName || 'Grupo sin nombre'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-semibold mt-1">
+                    Destino: <strong className="text-slate-800">{q.destination || 'Por definir'}</strong> · {q.pax || 0} Pax Totales
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div>
+                    <p className="text-[9.5px] font-bold text-slate-400 uppercase">Precio por Pax Pagante</p>
+                    <p className="font-black text-orange-600 text-base leading-tight">{q.currency || 'USD'} ${fmtVal(q.totalPerPerson || 0)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total Grupo</p>
+                    <p className="font-black text-slate-900 text-xs">{q.currency || 'USD'} ${fmtVal(q.totalSelling || 0)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
-        /* VISTA FORMULARIO COTIZADOR GRUPAL */
+        /* VISTA EDITOR COTIZADOR DE GRUPOS */
         <div className="space-y-8">
           
           {/* HEADER DEL COTIZADOR GRUPAL */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
-                <Calculator className="w-6 h-6" />
+                <Users className="w-6 h-6" />
               </div>
               <div>
                 <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Cotizador de Grupos</h1>
-                <p className="text-xs text-slate-500 font-semibold">Cálculo Inteligente de Liberados, Márgenes y Costo por Pasajero</p>
+                <p className="text-xs text-slate-500 font-semibold">Cálculo Inteligente de Liberados, Márgenes y Costos por Pasajero Amortizado</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
-              {/* MONEDA */}
+              {/* SELECTOR DE MONEDA */}
               <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
                 {(['USD', 'ARS', 'EUR'] as const).map(curr => (
                   <button
                     key={curr}
                     type="button"
-                    onClick={() => updateField('currency', curr)}
+                    onClick={() => setQuote(prev => ({ ...prev, currency: curr }))}
                     className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                      form.currency === curr ? 'bg-white text-slate-900 shadow-xs border border-slate-200' : 'text-slate-400 hover:text-slate-700'
+                      quote.currency === curr ? 'bg-white text-slate-900 shadow-xs border border-slate-200' : 'text-slate-400 hover:text-slate-700'
                     }`}
                   >
                     {curr}
@@ -519,77 +818,102 @@ export function GroupQuoteManager() {
               {/* SAVE BUTTON */}
               <button
                 type="button"
-                onClick={saveQuote}
-                disabled={saving}
+                onClick={saveGroupQuote}
                 className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all cursor-pointer"
               >
-                <Save className="w-4 h-4" /> {saving ? 'Guardando...' : 'Guardar Grupo'}
+                <Save className="w-4 h-4" /> Guardar Cotización de Grupo
               </button>
             </div>
           </div>
 
-          {/* STATUS PIPELINE FOR GROUPS */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
-            <p className="text-[10.5px] font-black uppercase tracking-wider text-slate-400 mb-4">Estado del Grupo / Pipeline Comercial</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { id: 'draft', label: 'Borrador', icon: FileText, activeCls: 'bg-slate-900 text-white border-slate-900' },
-                { id: 'sent', label: 'Enviada', icon: Send, activeCls: 'bg-blue-600 text-white border-blue-600' },
-                { id: 'confirmed', label: 'Confirmada', icon: CheckCircle2, activeCls: 'bg-emerald-600 text-white border-emerald-600' },
-                { id: 'lost', label: 'Perdida', icon: XCircle, activeCls: 'bg-red-600 text-white border-red-600' }
-              ].map(st => {
-                const isActive = form.status === st.id;
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => updateField('status', st.id)}
-                    className={`p-3 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
-                      isActive ? st.activeCls + ' shadow-md scale-102' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100'
-                    }`}
-                  >
-                    <st.icon className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{st.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+          {/* MOTOR DE CÁLCULO DE LIBERADOS (KPI CARDS SUPERIORES) */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-3xl text-white shadow-xl space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-700/80 pb-4 flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 text-orange-400 flex items-center justify-center font-black">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Configuración de Liberados (Free Spots)</h3>
+                  <p className="text-xs text-slate-400 font-medium">Define las plazas sin cargo para coordinadores, profesores o choferes amortizadas en los pagantes</p>
+                </div>
+              </div>
 
-          {/* METRICS CARDS BANNER */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Pasajeros Pagantes / Liberados</p>
-              <p className="text-2xl font-black text-slate-900 mt-1">{totals.paidPax} <span className="text-xs font-bold text-slate-500">Pagantes (+{totals.liberatedPax} Lib.)</span></p>
+              {/* SELECTOR DE REGLA DE LIBERADOS */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs font-bold text-slate-300 uppercase">Regla de Liberados:</span>
+                <select
+                  value={quote.liberadosRule}
+                  onChange={e => setQuote(prev => ({ ...prev, liberadosRule: e.target.value as LiberadosRule }))}
+                  className="bg-slate-800 border border-slate-700 text-orange-400 font-black text-xs px-3.5 py-2 rounded-xl outline-none"
+                >
+                  <option value="1_10">1 Liberado cada 10 Pax (10+1)</option>
+                  <option value="1_15">1 Liberado cada 15 Pax (15+1)</option>
+                  <option value="1_20">1 Liberado cada 20 Pax (20+1)</option>
+                  <option value="fixed">Liberados Fijos (Manual)</option>
+                  <option value="none">Sin Liberados (Todos Pagantes)</option>
+                </select>
+
+                {quote.liberadosRule === 'fixed' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-300">Cant:</span>
+                    <input
+                      type="number"
+                      value={quote.fixedLiberados}
+                      onChange={e => setQuote(prev => ({ ...prev, fixedLiberados: parseInt(e.target.value) || 0 }))}
+                      className="w-16 bg-slate-800 border border-slate-700 text-white font-black text-xs px-2.5 py-2 rounded-xl outline-none text-center"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-2xs">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Neto Total Grupo</p>
-              <p className="text-2xl font-black text-slate-900 mt-1">{form.currency} {money(totals.totalNet)}</p>
-            </div>
-            <div className="bg-gradient-to-tr from-orange-500 to-amber-500 p-5 rounded-2xl text-white shadow-md shadow-orange-500/20">
-              <p className="text-[10px] font-black uppercase text-orange-100 tracking-wider">Venta por Pasajero</p>
-              <p className="text-2xl font-black mt-1">{form.currency} {money(totals.totalPerPerson)}</p>
-            </div>
-            <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-2xs">
-              <p className="text-[10px] font-black uppercase text-emerald-600 tracking-wider">Ganancia Bruta Estimada</p>
-              <p className="text-2xl font-black text-emerald-700 mt-1">+{form.currency} {money(totals.totalProfit)}</p>
+
+            {/* KPI METRICS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Pasajeros Totales Grupo</p>
+                <div className="flex items-baseline gap-2">
+                  <input
+                    type="number"
+                    value={quote.pax}
+                    onChange={e => setQuote(prev => ({ ...prev, pax: parseInt(e.target.value) || 1 }))}
+                    className="w-20 bg-slate-900 border border-slate-700 text-white text-2xl font-black rounded-lg px-2 py-0.5 text-center outline-none"
+                  />
+                  <span className="text-xs font-bold text-slate-400">Pax Totales</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
+                <p className="text-[10px] font-black uppercase text-orange-400 tracking-wider">Pax Pagantes vs Liberados</p>
+                <p className="text-2xl font-black text-white">{paidPax} <span className="text-xs font-bold text-orange-400">Pagantes (+{liberatedPax} Liberados)</span></p>
+              </div>
+
+              <div className="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/60 space-y-1">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Neto Total Grupo</p>
+                <p className="text-2xl font-black text-slate-200">{quote.currency} ${fmtVal(totals.totalNet)}</p>
+              </div>
+
+              <div className="bg-gradient-to-tr from-orange-500 to-amber-500 p-4 rounded-2xl text-white shadow-lg space-y-1">
+                <p className="text-[10px] font-black uppercase text-orange-100 tracking-wider">Precio Final por Pax Pagante</p>
+                <p className="text-2xl font-black">{quote.currency} ${fmtVal(totals.sellingPerPaidPax)}</p>
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
             
-            {/* MAIN FORM COLUMN */}
+            {/* COLUMNA PRINCIPAL EDITOR */}
             <div className="xl:col-span-8 space-y-6">
               
-              {/* GENERAL DATA */}
+              {/* DATOS DEL GRUPO */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-600">
+                  <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center">
                     <Users className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Datos del Grupo & Proyecto</h3>
-                    <p className="text-xs text-slate-500 font-medium">Información de la institución, contingente y fechas del viaje.</p>
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Datos del Contingente / Proyecto</h3>
+                    <p className="text-xs text-slate-500 font-medium">Información comercial, institución y fechas del viaje del grupo</p>
                   </div>
                 </div>
 
@@ -597,19 +921,19 @@ export function GroupQuoteManager() {
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Nombre del Grupo / Contingente</label>
                     <input
-                      value={form.groupName}
-                      onChange={e => updateField('groupName', e.target.value)}
+                      value={quote.groupName}
+                      onChange={e => setQuote(prev => ({ ...prev, groupName: e.target.value }))}
                       placeholder="Ej: Gira de Estudios Colegio San Martín"
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
+                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Cliente / Institución / Encargado</label>
+                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Cliente / Encargado / Institución</label>
                     <input
-                      value={form.clientName}
-                      onChange={e => updateField('clientName', e.target.value)}
-                      placeholder="Ej: Asociación de Padres / Coord. Juan Pérez"
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
+                      value={quote.clientName}
+                      onChange={e => setQuote(prev => ({ ...prev, clientName: e.target.value }))}
+                      placeholder="Ej: Coord. Juan Pérez / Prof. María"
+                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
                 </div>
@@ -618,72 +942,49 @@ export function GroupQuoteManager() {
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Destino Principal</label>
                     <input
-                      value={form.destination}
-                      onChange={e => updateField('destination', e.target.value)}
+                      value={quote.destination}
+                      onChange={e => setQuote(prev => ({ ...prev, destination: e.target.value }))}
                       placeholder="Ej: Bariloche / Brasil / Europa"
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
+                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
-                  <div>
-                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Pasajeros Totales (Pax)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={form.pax}
-                      onChange={e => updateField('pax', e.target.value)}
-                      placeholder="Ej: 30"
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-slate-900 outline-none focus:border-orange-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Nombre del Proyecto</label>
-                    <input
-                      value={form.project}
-                      onChange={e => updateField('project', e.target.value)}
-                      placeholder="Ej: Egresados 2026"
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Fecha de Salida</label>
                     <input
                       type="date"
-                      value={form.startDate}
-                      onChange={e => updateField('startDate', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
+                      value={quote.startDate}
+                      onChange={e => setQuote(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
                   <div>
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Fecha de Regreso</label>
                     <input
                       type="date"
-                      value={form.endDate}
-                      onChange={e => updateField('endDate', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white"
+                      value={quote.endDate}
+                      onChange={e => setQuote(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* SERVICIOS DEL GRUPO */}
+              {/* BOTONES PARA AGREGAR SERVICIOS */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
                 <p className="text-[10.5px] font-black uppercase tracking-wider text-slate-400">Agregar Servicios al Grupo</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
+                    { type: 'flight', label: 'VUELOS', icon: Plane, bg: 'bg-sky-50 text-sky-600 hover:bg-sky-500 hover:text-white border-sky-200/70' },
                     { type: 'hotel', label: 'ALOJAMIENTO', icon: Hotel, bg: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white border-emerald-200/70' },
-                    { type: 'transport', label: 'TRANSPORTE', icon: Bus, bg: 'bg-sky-50 text-sky-600 hover:bg-sky-500 hover:text-white border-sky-200/70' },
-                    { type: 'excursion', label: 'EXCURSIONES', icon: Compass, bg: 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white border-amber-200/70' },
-                    { type: 'meal', label: 'GASTRONOMÍA', icon: Utensils, bg: 'bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white border-orange-200/70' },
-                    { type: 'assistance', label: 'ASISTENCIAS', icon: ShieldCheck, bg: 'bg-indigo-50 text-indigo-600 hover:bg-indigo-500 hover:text-white border-indigo-200/70' },
-                    { type: 'other', label: 'OTROS', icon: Plus, bg: 'bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white border-slate-200' }
+                    { type: 'transfer', label: 'TRASLADOS', icon: Bus, bg: 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white border-amber-200/70' },
+                    { type: 'train', label: 'TRENES', icon: Train, bg: 'bg-purple-50 text-purple-600 hover:bg-purple-500 hover:text-white border-purple-200/70' },
+                    { type: 'assistance', label: 'ASISTENCIA', icon: ShieldCheck, bg: 'bg-indigo-50 text-indigo-600 hover:bg-indigo-500 hover:text-white border-indigo-200/70' },
+                    { type: 'service', label: 'EXCURSIÓN/OTRO', icon: Compass, bg: 'bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white border-slate-200' }
                   ].map(btn => (
                     <button
                       key={btn.type}
                       type="button"
-                      onClick={() => addService(btn.type)}
+                      onClick={() => handleAddItem(btn.type as any)}
                       className={`bg-white border ${btn.bg.split(' ').pop()} p-3 rounded-2xl flex flex-col items-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-md hover:-translate-y-0.5`}
                     >
                       <div className={`w-10 h-10 rounded-xl ${btn.bg.split(' ').slice(0, 4).join(' ')} flex items-center justify-center transition-all shadow-2xs`}>
@@ -695,184 +996,175 @@ export function GroupQuoteManager() {
                 </div>
               </div>
 
-              {/* LISTADO DE SERVICIOS GRUPALES CARGADOS */}
+              {/* LISTADO DE TARJETAS DE SERVICIO (Mismo diseño que Cotizador Manual) */}
               <div className="space-y-4">
-                {form.services.length === 0 ? (
+                {quote.items.length === 0 ? (
                   <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
                     <Calculator className="w-10 h-10 text-slate-300 mx-auto" />
-                    <h4 className="text-sm font-black uppercase text-slate-800">No hay servicios cargados en el grupo</h4>
-                    <p className="text-xs text-slate-400 max-w-xs mx-auto">Seleccioná un tipo de servicio de los botones superiores para armar la estructura de costos del grupo.</p>
+                    <h4 className="text-sm font-black uppercase text-slate-800">No hay servicios cargados aún</h4>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto">Seleccioná un tipo de servicio arriba para comenzar a estructurar los costos del grupo.</p>
                   </div>
                 ) : (
-                  form.services.map(service => {
-                    const provider = operators.find(op => op.id === service.providerId)
-                    const isExpanded = expandedServiceId === service.id
+                  quote.items.map((item, idx) => {
+                    const isExp = expandedItem === item.id
+                    const provider = operators.find(o => o.id === item.providerId)
+                    const eco = calculateItemEconomics(item)
 
                     return (
-                      <div key={service.id} className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+                      <div key={item.id} className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden transition-all">
                         
-                        {/* SERVICE HEADER */}
+                        {/* BARRA SUPERIOR DE TARJETA (HEADER) */}
                         <div
-                          onClick={() => setExpandedServiceId(isExpanded ? null : service.id)}
+                          onClick={() => setExpandedItem(isExp ? null : item.id)}
                           className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-all border-b border-slate-100"
                         >
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-black">
-                              {service.type === 'hotel' ? <Hotel className="w-5 h-5" /> :
-                               service.type === 'transport' ? <Bus className="w-5 h-5" /> :
-                               service.type === 'excursion' ? <Compass className="w-5 h-5" /> :
-                               service.type === 'meal' ? <Utensils className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                              {item.type === 'flight' ? <Plane className="w-5 h-5" /> :
+                               item.type === 'hotel' ? <Hotel className="w-5 h-5" /> :
+                               item.type === 'train' ? <Train className="w-5 h-5" /> :
+                               item.type === 'transfer' ? <Bus className="w-5 h-5" /> :
+                               item.type === 'assistance' ? <ShieldCheck className="w-5 h-5" /> : <Compass className="w-5 h-5" />}
                             </div>
                             <div>
                               <h4 className="text-sm font-black text-slate-900 uppercase">
-                                {service.description || 'Servicio Grupal'}
+                                {item.type === 'flight' ? (item.details.airline || 'Aéreo Grupal') :
+                                 item.type === 'hotel' ? (item.details.hotelName || 'Alojamiento Grupal') :
+                                 item.type === 'transfer' ? `Traslado: ${item.details.origin || 'Origen'} ➔ ${item.details.destination || 'Destino'}` :
+                                 (item.details.description || item.type.toUpperCase())}
                               </h4>
                               <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                                Mode: <strong className="text-slate-800">{service.billingMode === 'per_group' ? 'Por Grupo' : 'Por Persona'}</strong> · Provider: <strong className="text-slate-800">{provider ? provider.name : 'Sin Proveedor'}</strong> · Liberados: {service.liberados || 0}
+                                Proveedor: <strong className="text-slate-800">{provider ? provider.name : 'Sin asignar'}</strong> · Modo: {item.economics.pricingModel === 'per_passenger' ? 'Por Pax' : 'Por Grupo Total'}
                               </p>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-6">
                             <div className="text-right">
-                              <p className="text-[9.5px] font-bold text-slate-400 uppercase">Neto Unitario</p>
-                              <p className="text-sm font-black text-slate-900">{form.currency} {money(num(service.netUnitCost))}</p>
+                              <p className="text-[9.5px] font-bold text-slate-400 uppercase">Neto Total Servicio</p>
+                              <p className="text-sm font-black text-slate-900">{quote.currency} ${fmtVal(eco.netoAPagar)}</p>
                             </div>
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setForm(curr => ({ ...curr, services: curr.services.filter(s => s.id !== service.id) }))
-                              }}
-                              className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all"
+                              onClick={(e) => { e.stopPropagation(); removeItem(item.id) }}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isExp ? 'rotate-180' : ''}`} />
                           </div>
                         </div>
 
-                        {/* SERVICE BODY EXPANDED */}
-                        {isExpanded && (
+                        {/* DETALLE EXPANDIBLE DEL SERVICIO */}
+                        {isExp && (
                           <div className="p-6 bg-slate-50/70 border-t border-slate-100 space-y-6">
                             
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div className="md:col-span-2">
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Descripción del Servicio</label>
-                                <input
-                                  value={service.description}
-                                  onChange={e => updateService(service.id, 'description', e.target.value)}
-                                  placeholder="Ej: Hotelería 7 noches All Inclusive"
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
-                                />
-                              </div>
-
+                            {/* PROVEEDOR Y MODO DE COSTO */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                               <div>
                                 <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Proveedor / Operador</label>
                                 <select
-                                  value={service.providerId || ''}
-                                  onChange={e => updateService(service.id, 'providerId', e.target.value)}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                  value={item.providerId || ''}
+                                  onChange={e => setQuote(prev => ({
+                                    ...prev,
+                                    items: prev.items.map(it => it.id === item.id ? { ...it, providerId: e.target.value } : it)
+                                  }))}
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                                 >
-                                  <option value="">Sin proveedor</option>
-                                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                                  <option value="">Seleccionar Proveedor...</option>
+                                  {operators.map(op => <option key={op.id} value={op.id}>🏢 {op.name}</option>)}
                                 </select>
                               </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                               <div>
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Modo de Facturación</label>
+                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Modelo de Tarifa</label>
                                 <select
-                                  value={service.billingMode}
-                                  onChange={e => updateService(service.id, 'billingMode', e.target.value)}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                  value={item.economics.pricingModel}
+                                  onChange={e => updateItemEconomics(item.id, 'pricingModel', e.target.value)}
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                                 >
-                                  <option value="per_person">Por Persona</option>
-                                  <option value="per_group">Por Grupo Total</option>
+                                  <option value="per_passenger">Por Pasajero (Multiplica por Pax Grupo)</option>
+                                  <option value="divided_total">Tarifa Total Grupo (Monto Global Fijo)</option>
                                 </select>
                               </div>
 
                               <div>
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Costo Neto Unitario ({form.currency})</label>
+                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Costo Neto Unitario ({quote.currency})</label>
                                 <input
                                   type="number"
-                                  value={service.netUnitCost}
-                                  onChange={e => updateService(service.id, 'netUnitCost', e.target.value)}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                                  value={item.economics.baseNetCost || ''}
+                                  onChange={e => updateItemEconomics(item.id, 'baseNetCost', parseFloat(e.target.value) || 0)}
+                                  placeholder="Ej: 450"
+                                  className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-black text-slate-900 outline-none"
                                 />
-                              </div>
-
-                              <div>
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Pax Liberados (Gratis)</label>
-                                <input
-                                  type="number"
-                                  value={service.liberados}
-                                  onChange={e => updateService(service.id, 'liberados', e.target.value)}
-                                  className="w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Comisión del Servicio</label>
-                                <div className="flex gap-2">
-                                  <input
-                                    type="number"
-                                    value={service.commission}
-                                    onChange={e => updateService(service.id, 'commission', e.target.value)}
-                                    className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
-                                  />
-                                  <select
-                                    value={service.commissionMode}
-                                    onChange={e => updateService(service.id, 'commissionMode', e.target.value)}
-                                    className="bg-white border border-slate-200 px-2 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none"
-                                  >
-                                    <option value="percent">%</option>
-                                    <option value="fixed">Fijo</option>
-                                  </select>
-                                </div>
                               </div>
                             </div>
 
-                            {/* CATEGORÍAS DE TARIFAS POR HABITACIÓN / PAX */}
-                            <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10.5px] font-black uppercase text-slate-800">Desglose de Categorías y Tipos de Habitación</span>
-                                <button type="button" onClick={() => addCategory(service.id)} className="text-[10.5px] font-black uppercase text-orange-600 hover:text-orange-700">
-                                  + Agregar Categoría
-                                </button>
-                              </div>
-                              {service.categories.map(cat => (
-                                <div key={cat.id} className="grid grid-cols-12 gap-2 items-center">
+                            {/* CAMPOS ESPECÍFICOS SEGÚN TIPO */}
+                            {item.type === 'flight' && (
+                              <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-200">
+                                <h5 className="text-xs font-black text-slate-800 uppercase flex items-center gap-2">
+                                  <Plane className="w-4 h-4 text-sky-600" /> Detalle de Vuelo Grupal
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <input
-                                    value={cat.label}
-                                    onChange={e => updateCategory(service.id, cat.id, 'label', e.target.value)}
-                                    placeholder="Ej: Habitación Doble / Liberado"
-                                    className="col-span-6 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
+                                    value={item.details.airline || ''}
+                                    onChange={e => updateItemDetails(item.id, 'airline', e.target.value)}
+                                    placeholder="Aerolínea (ej: Aerolíneas Argentinas)"
+                                    className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
                                   />
                                   <input
-                                    type="number"
-                                    value={cat.quantity}
-                                    onChange={e => updateCategory(service.id, cat.id, 'quantity', e.target.value)}
-                                    placeholder="Cant Pax"
-                                    className="col-span-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
+                                    value={item.details.bookingCode || ''}
+                                    onChange={e => updateItemDetails(item.id, 'bookingCode', e.target.value)}
+                                    placeholder="Código PNR / Localizador de Grupo"
+                                    className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
                                   />
-                                  <input
-                                    type="number"
-                                    value={cat.value}
-                                    onChange={e => updateCategory(service.id, cat.id, 'value', e.target.value)}
-                                    placeholder="Precio"
-                                    className="col-span-3 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => removeCategory(service.id, cat.id)}
-                                    className="col-span-1 p-2 text-slate-400 hover:text-red-600 rounded-xl"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
                                 </div>
-                              ))}
+                              </div>
+                            )}
+
+                            {item.type === 'hotel' && (
+                              <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-200">
+                                <h5 className="text-xs font-black text-slate-800 uppercase flex items-center gap-2">
+                                  <Hotel className="w-4 h-4 text-emerald-600" /> Detalle de Alojamiento Grupal
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <input
+                                    value={item.details.hotelName || ''}
+                                    onChange={e => updateItemDetails(item.id, 'hotelName', e.target.value)}
+                                    placeholder="Nombre del Hotel"
+                                    className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={item.details.checkIn || ''}
+                                    onChange={e => updateItemDetails(item.id, 'checkIn', e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={item.details.checkOut || ''}
+                                    onChange={e => updateItemDetails(item.id, 'checkOut', e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* CÁLCULO FINANCIERO Y MARGEN DE ESTE SERVICIO */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200">
+                              <div className="p-3 bg-slate-900 text-white rounded-xl text-center">
+                                <p className="text-[9.5px] font-black uppercase text-slate-400">Neto a Pagar a Proveedor</p>
+                                <p className="text-base font-black">{quote.currency} ${fmtVal(eco.netoAPagar)}</p>
+                              </div>
+                              <div className="p-3 bg-emerald-50 rounded-xl text-center">
+                                <p className="text-[9.5px] font-black uppercase text-emerald-600">Ganancia Agencia</p>
+                                <p className="text-base font-black text-emerald-700">+{quote.currency} ${fmtVal(eco.ganancia)}</p>
+                              </div>
+                              <div className="p-3 bg-orange-50 rounded-xl text-center">
+                                <p className="text-[9.5px] font-black uppercase text-orange-600">Total a Cobrar Cliente</p>
+                                <p className="text-base font-black text-orange-700">{quote.currency} ${fmtVal(eco.totalACobrar)}</p>
+                              </div>
                             </div>
 
                           </div>
@@ -884,87 +1176,186 @@ export function GroupQuoteManager() {
                 )}
               </div>
 
-              {/* COBROS Y PAGOS REGISTRADOS */}
+              {/* COBROS Y PAGOS A PROVEEDORES DEL GRUPO (FINANCIERA & TESORERÍA) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <PaymentPanel
-                  title="Cobros del Grupo (Ingresos)"
-                  items={form.payments}
-                  operators={operators}
-                  showProvider={false}
-                  total={totalCollected}
-                  onAdd={() => addPayment('payments')}
-                  onUpdate={(id, key, value) => updatePayment('payments', id, key, value)}
-                  onRemove={id => removePayment('payments', id)}
-                />
-                <PaymentPanel
-                  title="Pagos a Proveedores (Egresos)"
-                  items={form.providerPayments}
-                  operators={operators}
-                  showProvider
-                  total={totalProviderPaid}
-                  onAdd={() => addPayment('providerPayments')}
-                  onUpdate={(id, key, value) => updatePayment('providerPayments', id, key, value)}
-                  onRemove={id => removePayment('providerPayments', id)}
-                />
-              </div>
-
-              {/* INCLUYE / EXCLUYE Y TEXTO WHATSAPP */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Servicios Incluidos (para presupuesto)</label>
-                    <textarea
-                      value={form.includes}
-                      onChange={e => updateField('includes', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold text-slate-800 min-h-[100px] outline-none"
-                    />
+                
+                {/* COBROS DEL GRUPO */}
+                <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-emerald-600" /> Cobros del Grupo (Ingresos)
+                      </h4>
+                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                        Cobrado: <strong className="text-emerald-600">${fmtVal(totals.totalCollected)}</strong> · Pendiente: <strong className="text-orange-600">${fmtVal(totals.pendingCollection)}</strong>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePastePaymentFromClipboard('payments', '')}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-black text-xs uppercase rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Pegar Comprobante IA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addPayment('payments')}
+                        className="px-3 py-1.5 bg-emerald-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-emerald-700 transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Nuevo Cobro
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">No Incluye</label>
-                    <textarea
-                      value={form.excludes}
-                      onChange={e => updateField('excludes', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold text-slate-800 min-h-[100px] outline-none"
-                    />
+
+                  <div className="space-y-3">
+                    {quote.payments.length === 0 ? (
+                      <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin cobros registrados aún.</p>
+                    ) : (
+                      quote.payments.map(p => (
+                        <div key={p.id} className="p-3.5 bg-white rounded-2xl border border-slate-200 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="date"
+                              value={p.date}
+                              onChange={e => updatePayment('payments', p.id, 'date', e.target.value)}
+                              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-bold"
+                            />
+                            <input
+                              type="number"
+                              value={p.amount || ''}
+                              onChange={e => updatePayment('payments', p.id, 'amount', parseFloat(e.target.value) || 0)}
+                              placeholder="Monto"
+                              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-black text-emerald-600"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              value={p.reference || ''}
+                              onChange={e => updatePayment('payments', p.id, 'reference', e.target.value)}
+                              placeholder="N° Comprobante / Ref"
+                              className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-bold"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removePayment('payments', p.id)}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                {whatsappText && (
-                  <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 space-y-2">
-                    <div className="flex items-center gap-2 text-emerald-800 text-xs font-black uppercase">
-                      <CheckCircle2 className="w-4 h-4" /> Texto Generado para Enviar por WhatsApp
+                {/* PAGOS A PROVEEDORES DEL GRUPO */}
+                <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
+                    <div>
+                      <h4 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-sky-600" /> Pagos a Proveedores (Egresos)
+                      </h4>
+                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                        Pagado: <strong className="text-sky-600">${fmtVal(totals.totalProviderPaid)}</strong> · Pendiente: <strong className="text-amber-600">${fmtVal(totals.pendingProviderPayment)}</strong>
+                      </p>
                     </div>
-                    <pre className="whitespace-pre-wrap text-xs text-slate-800 font-mono bg-white p-4 rounded-xl border border-emerald-100 max-h-60 overflow-y-auto">
-                      {whatsappText}
-                    </pre>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePastePaymentFromClipboard('providerPayments', '')}
+                        className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-black text-xs uppercase rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-sky-600" /> Pegar Comprobante IA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addPayment('providerPayments')}
+                        className="px-3.5 py-1.5 bg-sky-600 text-white font-black text-xs uppercase rounded-xl shadow-xs hover:bg-sky-700 transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Nuevo Pago
+                      </button>
+                    </div>
                   </div>
-                )}
+
+                  <div className="space-y-3">
+                    {quote.providerPayments.length === 0 ? (
+                      <p className="text-xs text-slate-400 font-medium py-4 italic text-center bg-white rounded-xl border border-slate-200">Sin pagos a proveedores registrados.</p>
+                    ) : (
+                      quote.providerPayments.map(p => (
+                        <div key={p.id} className="p-3.5 bg-white rounded-2xl border border-slate-200 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="date"
+                              value={p.date}
+                              onChange={e => updatePayment('providerPayments', p.id, 'date', e.target.value)}
+                              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-bold"
+                            />
+                            <input
+                              type="number"
+                              value={p.amount || ''}
+                              onChange={e => updatePayment('providerPayments', p.id, 'amount', parseFloat(e.target.value) || 0)}
+                              placeholder="Monto"
+                              className="bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-black text-sky-600"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={p.providerId || ''}
+                              onChange={e => updatePayment('providerPayments', p.id, 'providerId', e.target.value)}
+                              className="flex-1 bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-bold"
+                            >
+                              <option value="">Seleccionar Proveedor...</option>
+                              {usedOperators.map(op => <option key={op.id} value={op.id}>🏢 {op.name}</option>)}
+                            </select>
+                            <input
+                              value={p.reference || ''}
+                              onChange={e => updatePayment('providerPayments', p.id, 'reference', e.target.value)}
+                              placeholder="Ref"
+                              className="w-28 bg-slate-50 border border-slate-200 p-2 rounded-xl text-xs font-bold"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removePayment('providerPayments', p.id)}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
               </div>
 
             </div>
 
-            {/* SIDEBAR CONSOLIDADO FINAL GRUPAL STICKY */}
+            {/* SIDEBAR CONSOLIDADO FINAL STICKY */}
             <div className="xl:col-span-4">
               <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-lg sticky top-8 space-y-6">
                 
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-orange-500" /> Consolidado del Grupo
+                  <Wallet className="w-4 h-4 text-orange-500" /> Consolidado Final del Grupo
                 </h3>
 
                 <div className="space-y-4">
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
                     <p className="text-[10px] font-bold text-slate-400 uppercase">Neto Total Grupo</p>
-                    <p className="text-lg font-black text-slate-900">{form.currency} {money(totals.totalNet)}</p>
+                    <p className="text-lg font-black text-slate-900">{quote.currency} ${fmtVal(totals.totalNet)}</p>
                   </div>
 
                   <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200">
                     <p className="text-[10px] font-bold text-emerald-600 uppercase">Ganancia Bruta Estimada</p>
-                    <p className="text-lg font-black text-emerald-700">+{form.currency} {money(totals.totalProfit)}</p>
+                    <p className="text-lg font-black text-emerald-700">+{quote.currency} ${fmtVal(totals.totalProfit)}</p>
                   </div>
 
                   <div className="bg-gradient-to-tr from-orange-500 to-amber-500 p-5 rounded-2xl text-white shadow-lg shadow-orange-500/20">
-                    <p className="text-[10px] font-black uppercase text-orange-100">Precio Final por Pasajero</p>
-                    <p className="text-2xl font-black">{form.currency} {money(totals.totalPerPerson)}</p>
+                    <p className="text-[10px] font-black uppercase text-orange-100">Precio Final por Pax Pagante</p>
+                    <p className="text-2xl font-black">{quote.currency} ${fmtVal(totals.sellingPerPaidPax)}</p>
+                    <p className="text-[10px] text-orange-100 font-medium mt-1">Calculado sobre {paidPax} pagantes (+{liberatedPax} liberados)</p>
                   </div>
                 </div>
 
@@ -973,8 +1364,8 @@ export function GroupQuoteManager() {
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Comisión Global (%)</label>
                     <input
                       type="number"
-                      value={form.globalCommission}
-                      onChange={e => updateField('globalCommission', e.target.value)}
+                      value={quote.globalCommission}
+                      onChange={e => setQuote(prev => ({ ...prev, globalCommission: parseFloat(e.target.value) || 0 }))}
                       className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
                   </div>
@@ -983,8 +1374,8 @@ export function GroupQuoteManager() {
                     <label className="text-[10.5px] font-bold text-slate-500 uppercase block mb-1">Forzar Precio Final por Pax</label>
                     <input
                       type="number"
-                      value={form.priceOverride}
-                      onChange={e => updateField('priceOverride', e.target.value)}
+                      value={quote.priceOverride}
+                      onChange={e => setQuote(prev => ({ ...prev, priceOverride: e.target.value }))}
                       placeholder="Dejar vacío para cálculo automático"
                       className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none"
                     />
@@ -993,11 +1384,10 @@ export function GroupQuoteManager() {
 
                 <button
                   type="button"
-                  onClick={saveQuote}
-                  disabled={saving}
+                  onClick={saveGroupQuote}
                   className="w-full py-3.5 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <Save className="w-4 h-4" /> {saving ? 'Guardando...' : 'Guardar Cotización Grupal'}
+                  <Save className="w-4 h-4" /> Guardar Cotización Grupal
                 </button>
 
               </div>
@@ -1012,59 +1402,4 @@ export function GroupQuoteManager() {
   )
 }
 
-function PaymentPanel({
-  title,
-  items,
-  operators,
-  showProvider,
-  total,
-  onAdd,
-  onUpdate,
-  onRemove,
-}: {
-  title: string
-  items: Payment[]
-  operators: any[]
-  showProvider?: boolean
-  total: number
-  onAdd: () => void
-  onUpdate: (id: string, key: keyof Payment, value: string | number) => void
-  onRemove: (id: string) => void
-}) {
-  return (
-    <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">{title}</h3>
-          <p className="text-[11px] font-bold text-slate-500 mt-0.5">Total registrado: ${money(total)}</p>
-        </div>
-        <button type="button" onClick={onAdd} className="p-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-500 hover:text-white transition-all cursor-pointer">
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {items.length === 0 ? (
-          <p className="text-xs font-bold text-slate-400 italic py-2">Sin movimientos de pago cargados.</p>
-        ) : (
-          items.map(item => (
-            <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" value={item.date} onChange={e => onUpdate(item.id, 'date', e.target.value)} className="bg-white border border-slate-200 p-2 rounded-xl text-xs font-bold" />
-                <input type="number" value={item.amount} onChange={e => onUpdate(item.id, 'amount', e.target.value)} placeholder="Monto" className="bg-white border border-slate-200 p-2 rounded-xl text-xs font-bold" />
-              </div>
-              <div className="flex gap-2">
-                <input value={item.reference} onChange={e => onUpdate(item.id, 'reference', e.target.value)} placeholder="Referencia / N° Transacción" className="flex-1 bg-white border border-slate-200 p-2 rounded-xl text-xs font-bold" />
-                <button type="button" onClick={() => onRemove(item.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-export default GroupQuoteManager;
+export default GroupQuoteManager
