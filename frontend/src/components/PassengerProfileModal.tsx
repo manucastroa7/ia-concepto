@@ -226,15 +226,17 @@ export const PassengerProfileModal: React.FC<PassengerProfileModalProps> = ({ pa
                                         try { itemsList = JSON.parse(itemsList); } catch { itemsList = []; }
                                     }
 
+                                    const stKey = String(q.status || 'draft').toLowerCase();
                                     const STATUS_MAP: any = {
-                                        draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600' },
-                                        sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-700' },
-                                        follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-700' },
-                                        reserved: { label: 'Reserva', cls: 'bg-purple-100 text-purple-700' },
-                                        sold: { label: 'Vendido', cls: 'bg-emerald-100 text-emerald-700' },
-                                        lost: { label: 'Perdido', cls: 'bg-red-100 text-red-700' },
+                                        draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600 border border-slate-200' },
+                                        sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-700 border border-blue-200' },
+                                        follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-800 border border-amber-200' },
+                                        reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-700 border border-purple-200' },
+                                        sold: { label: 'Vendida', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                                        confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                                        lost: { label: 'Perdida', cls: 'bg-red-100 text-red-700 border border-red-200' },
                                     };
-                                    const st = STATUS_MAP[q.status] || STATUS_MAP.draft;
+                                    const st = STATUS_MAP[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-slate-100 text-slate-600' };
 
                                     return (
                                         <div key={q.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:border-orange-300 transition-all space-y-4">
@@ -400,9 +402,24 @@ export const PassengerProfileModal: React.FC<PassengerProfileModalProps> = ({ pa
                                                 Cobrado registrado: <strong className="text-emerald-600">{q.currency || 'USD'} {Number(q.soldPriceCollected || 0).toLocaleString()}</strong>
                                             </p>
                                         </div>
-                                        <span className="text-xs font-black uppercase text-slate-400 bg-slate-100 px-3 py-1 rounded-lg">
-                                            Estado: {q.status}
-                                        </span>
+                                        {(() => {
+                                            const stKey = String(q.status || 'draft').toLowerCase();
+                                            const labelMap: Record<string, string> = {
+                                                draft: 'Borrador',
+                                                sent: 'Enviada',
+                                                follow_up: 'Seguimiento',
+                                                reserved: 'Reservada',
+                                                sold: 'Vendida / Ganada',
+                                                confirmed: 'Confirmada',
+                                                lost: 'Perdida'
+                                            };
+                                            const labelText = labelMap[stKey] || String(q.status || 'Borrador').toUpperCase();
+                                            return (
+                                                <span className="text-xs font-black uppercase text-slate-600 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
+                                                    Estado: {labelText}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>

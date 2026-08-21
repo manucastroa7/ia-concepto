@@ -2333,9 +2333,24 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                           <p className="text-xs font-black text-slate-900 uppercase">{clientName}</p>
                           <p className="text-[11px] font-semibold text-slate-600 truncate">{q.title || 'Cotización de Viaje'}</p>
                         </div>
-                        <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
-                          {q.status}
-                        </span>
+                        {(() => {
+                          const stKey = String(q.status || 'draft').toLowerCase()
+                          const ST_MAP: Record<string, { label: string; cls: string }> = {
+                            draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border border-slate-200' },
+                            sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-800 border border-blue-200' },
+                            follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-800 border border-amber-200' },
+                            reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-800 border border-purple-200' },
+                            sold: { label: 'Vendida / Ganada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                            confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                            lost: { label: 'Perdida', cls: 'bg-red-100 text-red-800 border border-red-200' }
+                          }
+                          const st = ST_MAP[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-emerald-100 text-emerald-800' }
+                          return (
+                            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md ${st.cls}`}>
+                              {st.label}
+                            </span>
+                          )
+                        })()}
                       </div>
 
                       <div className="flex justify-between items-center text-xs border-t border-emerald-100 pt-2">
@@ -2444,15 +2459,17 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   })
                 }
 
+                const stKey = String(q.status || 'draft').toLowerCase()
                 const ST_CFG: any = {
                   draft: { label: 'Borrador', cls: 'bg-white text-slate-700 border-slate-300 shadow-2xs font-bold' },
                   sent: { label: 'Cotización Enviada', cls: 'bg-amber-50 text-amber-800 border-amber-200 font-bold' },
                   follow_up: { label: 'Seguimiento', cls: 'bg-blue-50 text-blue-800 border-blue-200 font-bold' },
-                  reserved: { label: 'Reserva', cls: 'bg-amber-100 text-amber-900 border-amber-300 font-black' },
-                  sold: { label: 'Vendido', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
-                  lost: { label: 'Perdido', cls: 'bg-red-100 text-red-800 border-red-300 font-bold' }
+                  reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-900 border-purple-300 font-black' },
+                  sold: { label: 'Vendida / Ganada', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
+                  confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
+                  lost: { label: 'Perdida', cls: 'bg-red-100 text-red-800 border-red-300 font-bold' }
                 }
-                const st = ST_CFG[q.status] || ST_CFG.draft
+                const st = ST_CFG[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-slate-100 text-slate-700' }
                 const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero Titular')
                 const initials = clientName.split(',').map((n: string) => n.trim()[0]).filter(Boolean).join('').slice(0, 2) || 'CL'
 

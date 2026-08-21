@@ -918,7 +918,22 @@ export function GroupQuoteManager() {
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.quoteNumber || 'REF: GRUPO'}</span>
-                    <span className="text-[9.5px] font-black uppercase px-2.5 py-0.5 rounded-md bg-orange-100 text-orange-700">{q.status}</span>
+                    {(() => {
+                      const stKey = String(q.status || 'draft').toLowerCase()
+                      const ST_CFG: Record<string, { label: string; cls: string }> = {
+                        draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-600 border border-slate-200' },
+                        sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-700 border border-blue-200' },
+                        follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-800 border border-amber-200' },
+                        reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-700 border border-purple-200' },
+                        sold: { label: 'Vendida / Ganada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                        confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+                        lost: { label: 'Perdida', cls: 'bg-red-100 text-red-700 border border-red-200' }
+                      }
+                      const st = ST_CFG[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-orange-100 text-orange-700' }
+                      return (
+                        <span className={`text-[9.5px] font-black uppercase px-2.5 py-0.5 rounded-md ${st.cls}`}>{st.label}</span>
+                      )
+                    })()}
                   </div>
                   <h3 className="font-black text-slate-900 text-base group-hover:text-orange-600 transition-colors uppercase tracking-tight">
                     {q.groupName || q.clientName || 'Grupo sin nombre'}
