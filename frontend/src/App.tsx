@@ -9,7 +9,6 @@ import {
 import { TariffSearch } from './components/TariffSearch'
 import { AgencySettings } from './components/AgencySettings'
 import ManualQuoteBuilder from './components/ManualQuoteBuilder'
-import { SalesTracker } from './components/SalesTracker'
 import { OperatorManager } from './components/OperatorManager'
 import { PassengerManager } from './components/PassengerManager'
 import { WebPackageManager } from './components/WebPackageManager'
@@ -25,7 +24,6 @@ export type Tab =
   | 'group-quotes' 
   | 'operators' 
   | 'passengers' 
-  | 'sales' 
   | 'treasury' 
   | 'web-packages' 
   | 'flyer-extractor' 
@@ -68,7 +66,6 @@ const MENU_GROUPS: NavGroup[] = [
     category: 'Gestión Financiera',
     icon: TrendingUp,
     items: [
-      { id: 'sales', label: 'Seguimiento de Ventas', description: 'Ventas y cobros', icon: DollarSign },
       { id: 'treasury', label: 'Tesorería & Cuentas', description: 'Movimientos de caja', icon: Wallet },
     ]
   },
@@ -270,7 +267,6 @@ export function App() {
             {tab === 'dashboard-comercial' && <ManualQuoteBuilder initialViewMode="dashboard" />}
             {tab === 'manual-quote' && <ManualQuoteBuilder initialViewMode="list" />}
             {tab === 'group-quotes' && <GroupQuoteManager />}
-            {tab === 'sales' && <SalesTracker />}
             {tab === 'treasury' && <TreasuryManager />}
             {tab === 'operators' && <OperatorManager />}
             {tab === 'passengers' && <PassengerManager />}
