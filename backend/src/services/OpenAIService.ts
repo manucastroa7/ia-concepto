@@ -28,6 +28,17 @@ export class OpenAIService {
     return this.createResponse([{ type: "input_text", text: prompt }, fileContent]);
   }
 
+  async generateFromMultipleImages(prompt: string, files: Array<{ base64: string; mimeType: string }>): Promise<string> {
+    if (!files || files.length === 0) {
+      return this.generateText(prompt);
+    }
+    const contents: OpenAIInputContent[] = [{ type: "input_text", text: prompt }];
+    files.forEach(file => {
+      contents.push(this.buildFileContent(file.base64, file.mimeType));
+    });
+    return this.createResponse(contents);
+  }
+
   private buildFileContent(fileBase64: string, mimeType: string): OpenAIInputContent {
     const dataUrl = `data:${mimeType};base64,${fileBase64}`;
 

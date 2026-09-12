@@ -52,7 +52,11 @@ export interface InstagramStoriesPlan {
 export class GeminiVisionService {
   private openai = new OpenAIService();
 
-  private async callAI(prompt: string, imageBase64?: string, mimeType?: string): Promise<string> {
+  private async callAI(prompt: string, imageBase64?: string, mimeType?: string, images?: Array<{ base64: string; mimeType: string }>): Promise<string> {
+    if (images && images.length > 0) {
+      return this.openai.generateFromMultipleImages(prompt, images);
+    }
+
     if (imageBase64 && mimeType) {
       return this.openai.generateFromImage(prompt, imageBase64, mimeType);
     }
@@ -440,6 +444,131 @@ REGLAS STRICTAS DE EXTRACCIÓN:
     if (!jsonMatch) throw new Error("No se pudo extraer la información del comprobante de pago");
 
     return JSON.parse(jsonMatch[0]);
+  }
+
+  async parseExpressQuote(images: Array<{ base64: string; mimeType: string }>, userPrompt: string, agencyName: string = "Concepto Evt"): Promise<{
+    whatsappText: string;
+    quoteData: any;
+  }> {
+    const prompt = `Sos un agente de viajes experto de la agencia "${agencyName}". 
+Se te han adjuntado ${images.length} capturas de pantalla con vuelos, itinerarios, opciones de pasajes o tarifarios.
+El usuario ha dado las siguientes INSTRUCCIONES ESPECÍFICAS DE PRECIO Y CONTENIDO:
+"${userPrompt || 'Cotizar el viaje detectado con un margen estándar de ganancia de 15% o fee correspondiente.'}"
+
+REGLAS CRÍTICAS DE MULTI-IMAGEN Y MULTI-OPCIÓN:
+1. DEBES LEER Y ANALIZAR CADA UNA DE LAS ${images.length} IMÁGENES ADJUNTAS.
+2. Si el usuario indica varias opciones (ej: "las imágenes 1 y 2 son Opción 1, e imágenes 3 y 4 son Opción 2"), DEBES EXTRAER Y REDACTAR AMBAS OPCIONES COMPLETAS EN EL "whatsappText". ¡NUNCA digas "A confirmar" ni pongas "(según imágenes 3 y 4)"! Si las imágenes están subidas, tienes la información y DEBES mostrar ambas opciones con sus aerolíneas, horarios y precios finales.
+3. ES ESTRICTAMENTE OBLIGATORIO INCLUIR EL NOMBRE DE LA AEROLÍNEA para cada opción o vuelo (ej: "✈️ Aerolínea: Aerolíneas Argentinas", "✈️ Aerolínea: Flybondi", "✈️ Aerolínea: JetSMART", "✈️ Aerolínea: Iberia", etc.).
+4. REGLA DE ORO DE PRECIOS POR PASAJERO Y TOTAL:
+   - NUNCA muestres desgloses de costos netos, comisiones, márgenes ni fees por separado en "whatsappText". El cliente solo ve el PRECIO FINAL CON TODO INCLUIDO.
+   - REGLA ESPECÍFICA PARA PRECIO POR PASAJERO: SIEMPRE QUE SE COTICE PARA 2 O MÁS PASAJEROS O APAREZCA LA TARIFA UNITARIA EN LA CAPTURA, DEBES MOSTRAR CLARAMENTE EL "PRECIO POR PASAJERO" Y EL "PRECIO TOTAL FINAL DEL GRUPO".
+   - Ejemplo de formato de precios en WhatsApp:
+     * Si son 2 o más pasajeros (ej: 2 adultos):
+       💵 *PRECIO POR PASAJERO:* ARS 229.426 (o el valor final unitario)
+       💳 *PRECIO TOTAL GRUPO (2 pax):* ARS 458.852
+     * Si es 1 solo pasajero:
+       💵 *PRECIO POR PASAJERO:* ARS 262.840
+   - DUALIDAD GASTOS ADMINISTRATIVOS VS GANANCIA AGENCIA:
+     * Si el usuario pide sumar "1.5% de gastos" o "gastos bancarios", esto corresponde a GASTOS ADMINISTRATIVOS ("adjustments" con impact: "cost"). No lo cuentes como ganancia limpia.
+     * Si el usuario pide sumar "15.000 de ganancia" o "fee de agencia", esto corresponde a la GANANCIA LIMPIA DE AGENCIA ("commissionValue").
+     * En WhatsApp, AMBOS se suman en el precio final cobrado al cliente. En "quoteData" (operativo interno), sepáralos correctamente en "adjustments" y "commissionValue".
+5. En "quoteData" (lado operativo de la agencia), guarda los items detectados con su "baseNetCost", "adjustments", "commissionValue", "price", "passengerCount" y datos de aerolínea/segmentos.
+
+FORMATO EJEMPLO DE SALIDA PARA whatsappText CON MÚLTIPLES OPCIONES Y PRECIO POR PAX:
+*¡HOLA! AQUÍ TENÉS TU COTIZACIÓN* ✈️
+
+*OPCIÓN 1: Aerolíneas Argentinas*
+• *Aerolínea:* Aerolíneas Argentinas
+• *Ruta:* Buenos Aires (AEP) ⇄ Salta (SLA)
+• *Tramos:*
+  - Ida: 12:50 AEP → 15:05 SLA | Directo
+  - Vuelta: 18:50 SLA → 20:55 EZE | Directo
+• *Equipaje:* Incluye equipaje de mano y bolso personal
+
+💵 *PRECIO POR PASAJERO:* ARS 229.426
+💳 *PRECIO TOTAL FINAL (2 pax):* ARS 458.852
+
+----------------------------------
+
+*OPCIÓN 2: JetSMART*
+• *Aerolínea:* JetSMART
+• *Ruta:* Buenos Aires (AEP) ⇄ Salta (SLA)
+• *Tramos:*
+  - Ida: 14:00 AEP → 16:14 SLA | Directo
+  - Vuelta: 21:25 SLA → 23:30 EZE | Directo
+• *Equipaje:* Tarifa Básica (Mochila)
+
+💵 *PRECIO POR PASAJERO:* ARS 132.859
+💳 *PRECIO TOTAL FINAL (2 pax):* ARS 265.718
+
+⏳ *Vigencia:* sujeto a disponibilidad y cambio de tarifa al momento de reservar.
+
+¿Te gustaría confirmar alguna de las opciones o tenés alguna duda? 📱
+
+FORMATO JSON DE SALIDA EXIGIDO (JSON puro sin markdown extra):
+{
+  "whatsappText": "*¡HOLA! AQUÍ TENÉS TU COTIZACIÓN...*",
+  "quoteData": {
+    "title": "Cotización Exprés - [Destino Principal]",
+    "destination": "[Destino / País Principal]",
+    "currency": "ARS",
+    "notes": "[Notas adicionales]",
+    "totalNetCostSnapshot": 220000,
+    "soldPriceCollected": 262840,
+    "items": [
+      {
+        "id": "item-1",
+        "type": "flight",
+        "details": {
+          "airline": "Aerolíneas Argentinas",
+          "bookingCode": "",
+          "type": "ROUND_TRIP",
+          "segments": [
+            {
+              "id": "seg-1",
+              "from": "AEP",
+              "to": "SLA",
+              "departureDate": "15/10/2026",
+              "departureTime": "12:50",
+              "arrivalDate": "15/10/2026",
+              "arrivalTime": "15:05",
+              "stops": "Directo"
+            }
+          ]
+        },
+        "economics": {
+          "baseNetCost": 220000,
+          "adjustments": [],
+          "pricingModel": "total",
+          "passengerCount": 1,
+          "commissionType": "fixed",
+          "commissionValue": 42840
+        },
+        "price": 262840
+      }
+    ]
+  }
+}
+
+Responde ÚNICAMENTE con el JSON válido.`;
+
+    // Process ALL images together in a single multi-image Vision call
+    const raw = await this.callAI(prompt, undefined, undefined, images);
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No se pudo procesar la cotización exprés con la IA");
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Ensure IDs on items
+    if (parsed.quoteData && Array.isArray(parsed.quoteData.items)) {
+      parsed.quoteData.items = parsed.quoteData.items.map((item: any, idx: number) => ({
+        ...item,
+        id: item.id || `item-express-${Date.now()}-${idx}`
+      }));
+    }
+
+    return parsed;
   }
 }
 

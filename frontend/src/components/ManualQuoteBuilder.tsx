@@ -2,13 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { 
     Plus, Trash2, Plane, Hotel, Users, ShieldCheck, Send, Save, History, Search, 
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
-    Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
+    Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, User, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
-    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy
+    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy,
+    List, Table, Layers
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import { PassengerProfileModal } from './PassengerProfileModal'
+import { ExpressQuoteModal } from './ExpressQuoteModal'
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -481,7 +483,70 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
   const [viewMode, setViewMode] = useState<'dashboard' | 'builder' | 'list' | 'calendar'>(initialViewMode)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
+  const [listDisplayMode, setListDisplayMode] = useState<'cards' | 'table' | 'grouped'>('cards')
   const [quoteToDelete, setQuoteToDelete] = useState<any | null>(null)
+
+  // Estado Cotizador Exprés IA (Smart Paste)
+  const [showExpressQuoteModal, setShowExpressQuoteModal] = useState(false)
+  const [pastedFileForExpress, setPastedFileForExpress] = useState<File | null>(null)
+
+  // Escuchar pegado global de imágenes (Ctrl + V) para abrir el Cotizador Exprés IA
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (showExpressQuoteModal) return; // Modal is already open and handles its own paste
+
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return; // Don't intercept if user is typing in an input
+      }
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            setPastedFileForExpress(file);
+            setShowExpressQuoteModal(true);
+            toast.success('¡Captura detectada! Abriendo Cotizador Exprés IA...');
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [showExpressQuoteModal]);
+
+  const handleImportExpressQuote = (quoteData: any) => {
+    if (!quoteData) return;
+    setQuote(prev => ({
+      ...prev,
+      id: undefined,
+      title: quoteData.title || prev.title || 'Cotización Exprés',
+      passengerId: quoteData.passengerId || prev.passengerId || '',
+      clientName: quoteData.clientName || prev.clientName || '',
+      destination: quoteData.destination || prev.destination || '',
+      currency: quoteData.currency || prev.currency || 'USD',
+      notes: quoteData.notes ? `${prev.notes ? prev.notes + '\n' : ''}${quoteData.notes}` : prev.notes,
+      items: Array.isArray(quoteData.items) && quoteData.items.length > 0 ? quoteData.items : prev.items,
+      status: 'draft'
+    }));
+
+    if (quoteData.passengerId) {
+      const matchedPax = passengers.find(p => p.id === quoteData.passengerId);
+      if (matchedPax) {
+        setPassengerSearch(`${matchedPax.surname}, ${matchedPax.name}`);
+      }
+    } else if (quoteData.clientName) {
+      setPassengerSearch(quoteData.clientName);
+    }
+
+    setViewMode('builder');
+    toast.success('Cotización exprés importada con Pasajero y Título autocompletados');
+  };
 
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportMode, setExportMode] = useState<'package_total' | 'detailed'>('package_total')
@@ -718,6 +783,27 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       return true
     })
   }, [historyQuotes, statusFilter, searchQuery])
+
+  // Agrupación de cotizaciones por Pasajero
+  const groupedByPassenger = useMemo(() => {
+    const map: Record<string, { passengerName: string; passengerId?: string; passenger?: any; quotes: any[] }> = {}
+    filteredHistoryQuotes.forEach(q => {
+      const pId = q.passengerId || q.passenger?.id
+      const pName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero Asignado')
+      const key = pId || pName
+
+      if (!map[key]) {
+        map[key] = {
+          passengerName: pName,
+          passengerId: pId,
+          passenger: q.passenger,
+          quotes: []
+        }
+      }
+      map[key].quotes.push(q)
+    })
+    return Object.values(map)
+  }, [filteredHistoryQuotes])
 
   // --- CÁLCULO FINANCIERO CON VALOR NETO DE PROVEEDOR Y GASTOS ADICIONALES ---
   const calculateItemEconomics = (item: Item) => {
@@ -2094,6 +2180,22 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     }
   }
 
+  const handleDuplicateAsVariant = () => {
+    const currentTitle = quote.title || 'Cotización';
+    const newTitle = currentTitle.includes('Variante')
+      ? `${currentTitle} (Copia)`
+      : `${currentTitle} - Variante B`;
+
+    setQuote(prev => ({
+      ...prev,
+      id: undefined,
+      title: newTitle,
+      status: 'draft'
+    }));
+
+    toast.success(`Cotización duplicada como "${newTitle}". Guardala en el CRM para registrarla.`);
+  }
+
   const handleStatusChange = (newStatus: QuoteState['status']) => {
     setQuote(prev => ({ ...prev, status: newStatus }))
     toast.success(`Estado actualizado a ${newStatus.toUpperCase()}`)
@@ -2162,46 +2264,72 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
   return (
     <div className="space-y-8 max-w-full overflow-x-hidden">
-      {/* SWITCH DE VISTA: DASHBOARD VS HISTORIAL VS CALENDARIO VS COTIZADOR MAESTRO */}
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex-wrap gap-1">
+      {/* CABECERA PRINCIPAL UI/UX EXECUTIVE: STREAMLINED NAVBAR */}
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-2xs">
+        {/* SEGMENTED TAB SWITCHER (FLAT, CONCISE LABELS, NO SCROLLBAR TRACK) */}
+        <div className="flex items-center bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden gap-1 flex-1">
           <button
             onClick={() => setViewMode('dashboard')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
-              viewMode === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+            className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              viewMode === 'dashboard'
+                ? 'bg-white text-indigo-600 shadow-2xs font-black'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
             }`}
           >
-            <LayoutDashboard className="w-4 h-4 text-white" /> Dashboard Comercial
+            <LayoutDashboard className="w-4 h-4 text-indigo-600" /> Dashboard
           </button>
 
           <button
             onClick={() => setViewMode('list')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
-              viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-700'
+            className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              viewMode === 'list'
+                ? 'bg-white text-slate-900 shadow-2xs font-black'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
             }`}
           >
-            <History className="w-4 h-4" /> Listado Maestro ({historyQuotes.length})
+            <History className="w-4 h-4 text-slate-600" /> Listado Maestro ({historyQuotes.length})
           </button>
 
           <button
             onClick={() => setViewMode('calendar')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 relative ${
-              viewMode === 'calendar' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-700'
+            className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all cursor-pointer flex items-center gap-2 relative shrink-0 ${
+              viewMode === 'calendar'
+                ? 'bg-white text-slate-900 shadow-2xs font-black'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
             }`}
           >
-            <CalendarDays className="w-4 h-4 text-orange-500" /> Calendario de Salidas
+            <CalendarDays className="w-4 h-4 text-orange-500" /> Salidas
             {upcoming7DayDepartures.length > 0 && (
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse absolute top-2 right-2 border-2 border-white" />
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             )}
           </button>
 
           <button
             onClick={() => setViewMode('builder')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
-              viewMode === 'builder' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20' : 'text-slate-400 hover:text-slate-700'
+            className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              viewMode === 'builder'
+                ? 'bg-white text-orange-600 shadow-2xs font-black'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 font-bold'
             }`}
           >
-            <Plus className="w-4 h-4" /> {quote.id ? 'Editando Cotización' : 'Nueva Cotización'}
+            <Plus className="w-4 h-4 text-orange-500" /> {quote.id ? 'Editando Cotización' : 'Nueva Cotización'}
+          </button>
+        </div>
+
+        {/* ACCIÓN PRINCIPAL DESTACADA A LA DERECHA */}
+        <div className="flex items-center gap-2 shrink-0 justify-end">
+          <button
+            onClick={() => {
+              setPastedFileForExpress(null);
+              setShowExpressQuoteModal(true);
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-md shadow-amber-500/15 active:scale-95 border border-amber-400/40"
+          >
+            <Sparkles className="w-4 h-4 text-slate-950 fill-slate-950" />
+            <span>Cotizador Exprés IA</span>
+            <kbd className="hidden sm:inline-block bg-slate-950/20 text-slate-950 px-1.5 py-0.5 rounded text-[10px] font-mono font-black ml-1">
+              Ctrl+V
+            </kbd>
           </button>
         </div>
       </div>
@@ -2397,27 +2525,67 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             </button>
           </div>
 
-          {/* BARRA DE BÚSQUEDA Y FILTROS TIPO PÍLDORA CON COLORES */}
-          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nombre de cliente, apellido o destino..."
-                className="w-full bg-white border border-slate-200 pl-10 pr-4 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 transition-all"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          {/* BARRA DE BÚSQUEDA, FILTROS Y TOGGLE DE VISTA (TARJETAS / TABLA / AGRUPADO) */}
+          <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+            <div className="flex flex-col md:flex-row items-center gap-3 flex-1">
+              {/* BUSCADOR */}
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por cliente, título o destino..."
+                  className="w-full bg-white border border-slate-200 pl-10 pr-8 py-2 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 transition-all"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* TOGGLE SELECTOR DE MODO DE VISTA */}
+              <div className="flex items-center bg-slate-200/80 p-1 rounded-xl gap-1 shrink-0 w-full md:w-auto justify-center">
+                <button
+                  type="button"
+                  onClick={() => setListDisplayMode('cards')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    listDisplayMode === 'cards' ? 'bg-white text-slate-900 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Vista en Tarjetas"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <LayoutDashboard className="w-3.5 h-3.5" /> Tarjetas
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => setListDisplayMode('table')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    listDisplayMode === 'table' ? 'bg-white text-slate-900 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Vista en Lista / Tabla Detallada"
+                >
+                  <Table className="w-3.5 h-3.5" /> Tabla / Lista
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setListDisplayMode('grouped')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    listDisplayMode === 'grouped' ? 'bg-orange-500 text-white shadow-xs font-black' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Vista Agrupada por Pasajero"
+                >
+                  <Users className="w-3.5 h-3.5" /> Agrupado por Pasajero
+                </button>
+              </div>
             </div>
 
+            {/* FILTROS DE ESTADO */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
                 { id: 'all', label: 'Todos', activeCls: 'bg-indigo-600 text-white shadow-2xs font-black' },
@@ -2443,8 +2611,15 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             </div>
           </div>
 
-          {/* GRILLA DE TARJETAS (CARDS REDISEÑADAS PREMIUM UX) */}
-          {filteredHistoryQuotes.length > 0 ? (
+          {/* CONTENIDO PRINCIPAL SEGÚN EL MODO DE VISTA SELECCIONADO */}
+          {filteredHistoryQuotes.length === 0 ? (
+            <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl p-8">
+              <History className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Sin cotizaciones encontradas</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">No hay resultados que coincidan con la búsqueda o el filtro seleccionado.</p>
+            </div>
+          ) : listDisplayMode === 'cards' ? (
+            /* VISTA 1: TARJETAS EN GRILLA */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredHistoryQuotes.map(q => {
                 let itemsList: any[] = q.items || []
@@ -2563,11 +2738,280 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 )
               })}
             </div>
+          ) : listDisplayMode === 'table' ? (
+            /* VISTA 2: LISTA DETALLADA / TABLA DE NIVEL EJECUTIVO */
+            <div className="overflow-hidden border border-slate-200/90 rounded-2xl bg-white shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10.5px] tracking-wider border-b border-slate-200">
+                    <tr className="h-11">
+                      <th className="px-4 py-2 font-bold whitespace-nowrap">Pasajero / Cliente</th>
+                      <th className="px-4 py-2 font-bold whitespace-nowrap">Título / Variante</th>
+                      <th className="px-4 py-2 font-bold whitespace-nowrap">Destino</th>
+                      <th className="px-4 py-2 font-bold whitespace-nowrap">Fechas</th>
+                      <th className="px-4 py-2 font-bold text-center whitespace-nowrap">Cant. PAX & Serv.</th>
+                      <th className="px-4 py-2 font-bold text-right whitespace-nowrap">Importe Total</th>
+                      <th className="px-4 py-2 font-bold text-center whitespace-nowrap">Estado</th>
+                      <th className="px-4 py-2 font-bold text-right whitespace-nowrap">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800 bg-white">
+                    {filteredHistoryQuotes.map(q => {
+                      let itemsList: any[] = q.items || []
+                      if (typeof itemsList === 'string') {
+                        try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
+                      }
+                      let totalSale = Number(q.soldPriceCollected) || 0
+                      if (totalSale === 0 && itemsList.length > 0) {
+                        itemsList.forEach((it: any) => {
+                          const eco = calculateItemEconomics(it)
+                          totalSale += eco.totalSale
+                        })
+                      }
+
+                      const stKey = String(q.status || 'draft').toLowerCase()
+                      const ST_CFG: any = {
+                        draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border-slate-300' },
+                        sent: { label: 'Enviada', cls: 'bg-amber-100/80 text-amber-900 border-amber-300' },
+                        follow_up: { label: 'Seguimiento', cls: 'bg-blue-100/80 text-blue-900 border-blue-300' },
+                        reserved: { label: 'Reservada', cls: 'bg-purple-100/80 text-purple-900 border-purple-300 font-extrabold' },
+                        sold: { label: 'Vendida', cls: 'bg-emerald-100/80 text-emerald-900 border-emerald-300 font-extrabold' },
+                        confirmed: { label: 'Confirmada', cls: 'bg-emerald-100/80 text-emerald-900 border-emerald-300 font-extrabold' },
+                        lost: { label: 'Perdida', cls: 'bg-red-100/80 text-red-900 border-red-300' }
+                      }
+                      const st = ST_CFG[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-slate-100 text-slate-700 border-slate-200' }
+                      const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero Titular')
+
+                      return (
+                        <tr key={q.id} className="h-14 hover:bg-slate-50/80 transition-colors group align-middle">
+                          <td className="px-4 py-2 align-middle whitespace-nowrap">
+                            <span 
+                              className="font-black text-slate-900 uppercase text-xs tracking-tight group-hover:text-indigo-600 transition-colors block truncate max-w-[180px]"
+                              title={clientName}
+                            >
+                              {clientName}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 align-middle whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 max-w-[220px]">
+                              <span 
+                                className="font-bold text-slate-800 uppercase text-xs truncate"
+                                title={q.title || 'Cotización de Viaje'}
+                              >
+                                {q.title || 'Cotización de Viaje'}
+                              </span>
+                              {q.title?.toLowerCase().includes('variante') && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[9px] font-black uppercase border border-amber-200 shrink-0">
+                                  Variante
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 align-middle whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-slate-600 font-semibold text-xs">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[140px]" title={q.destination || 'Por definir'}>{q.destination || 'Por definir'}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 align-middle text-slate-500 text-xs font-medium whitespace-nowrap">
+                            {q.startDate ? (
+                              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{fmtDate(q.startDate)} {q.endDate ? `al ${fmtDate(q.endDate)}` : ''}</span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Sin fechas</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 align-middle text-center whitespace-nowrap">
+                            <span className="font-extrabold text-slate-800 text-xs">{q.paxCount || 1} PAX</span>
+                            <span className="text-[10px] text-slate-400 font-normal ml-1">({itemsList.length} serv.)</span>
+                          </td>
+                          <td className="px-4 py-2 align-middle text-right whitespace-nowrap">
+                            <span className="font-bold text-slate-500 text-[10px] mr-1 uppercase">{q.currency || 'USD'}</span>
+                            <span className="font-black text-orange-600 text-sm tracking-tight">${fmtVal(totalSale)}</span>
+                          </td>
+                          <td className="px-4 py-2 align-middle text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] uppercase font-bold border ${st.cls}`}>
+                              {st.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 align-middle text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleLoadQuote(q)}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase rounded-xl transition-all cursor-pointer shadow-2xs"
+                                title="Cargar en Cotizador"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const pIdToOpen = q.passengerId || q.passenger?.id
+                                  if (pIdToOpen) setSelectedPassengerProfileId(pIdToOpen)
+                                  else toast.error('Sin pasajero asignado')
+                                }}
+                                className="p-1.5 bg-slate-50 hover:bg-orange-50 text-slate-500 hover:text-orange-600 rounded-xl border border-slate-200 hover:border-orange-200 transition-all cursor-pointer"
+                                title="Ver Ficha Pasajero"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setQuoteToDelete(q)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
-            <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl p-8">
-              <History className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Sin cotizaciones encontradas</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">No hay resultados que coincidan con la búsqueda o el filtro seleccionado.</p>
+            /* VISTA 3: AGRUPADO POR PASAJERO (PANEL CON VARIANTES Y OPCIONES) */
+            <div className="space-y-6">
+              {groupedByPassenger.map((group, idx) => {
+                const groupTotal = group.quotes.reduce((acc, q) => {
+                  let itemsList: any[] = q.items || []
+                  if (typeof itemsList === 'string') {
+                    try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
+                  }
+                  let totalSale = Number(q.soldPriceCollected) || 0
+                  if (totalSale === 0 && itemsList.length > 0) {
+                    itemsList.forEach((it: any) => {
+                      totalSale += calculateItemEconomics(it).totalSale
+                    })
+                  }
+                  return acc + totalSale
+                }, 0)
+
+                return (
+                  <div key={group.passengerId || idx} className="bg-slate-50/70 border border-slate-200/90 rounded-3xl p-5 space-y-4 shadow-2xs">
+                    {/* CABECERA DEL PASAJERO */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-200 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-orange-100/90 border border-orange-200 text-orange-600 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{group.passengerName}</h3>
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[10px] font-black uppercase">
+                              {group.quotes.length} {group.quotes.length === 1 ? 'Opción / Cotización' : 'Opciones / Variantes'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            Pasajero CRM: {group.passengerId ? 'Registrado' : 'Cotización Manual sin CRM'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        {group.passengerId && (
+                          <button
+                            onClick={() => setSelectedPassengerProfileId(group.passengerId!)}
+                            className="px-3 py-1.5 bg-white hover:bg-orange-50 text-orange-600 border border-orange-200 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Ver Ficha CRM
+                          </button>
+                        )}
+                        <div className="text-right">
+                          <span className="text-[9.5px] font-bold text-slate-400 uppercase block">Total Cotizado Grupo</span>
+                          <span className="font-black text-orange-600 text-base">USD ${fmtVal(groupTotal)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* LISTADO DE OPCIONES / VARIANTES DEL PASAJERO */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {group.quotes.map((q, qIdx) => {
+                        let itemsList: any[] = q.items || []
+                        if (typeof itemsList === 'string') {
+                          try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
+                        }
+                        let totalSale = Number(q.soldPriceCollected) || 0
+                        if (totalSale === 0 && itemsList.length > 0) {
+                          itemsList.forEach((it: any) => {
+                            totalSale += calculateItemEconomics(it).totalSale
+                          })
+                        }
+
+                        const stKey = String(q.status || 'draft').toLowerCase()
+                        const ST_CFG: any = {
+                          draft: { label: 'Borrador', cls: 'bg-white text-slate-700 border-slate-300 font-bold' },
+                          sent: { label: 'Enviada', cls: 'bg-amber-50 text-amber-800 border-amber-200 font-bold' },
+                          follow_up: { label: 'Seguimiento', cls: 'bg-blue-50 text-blue-800 border-blue-200 font-bold' },
+                          reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-900 border-purple-300 font-black' },
+                          sold: { label: 'Vendida', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
+                          confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black' },
+                          lost: { label: 'Perdida', cls: 'bg-red-100 text-red-800 border-red-300 font-bold' }
+                        }
+                        const st = ST_CFG[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-slate-100 text-slate-700' }
+
+                        return (
+                          <div key={q.id} className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-orange-300 transition-all shadow-2xs space-y-3 flex flex-col justify-between">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                                  Opción #{qIdx + 1}
+                                </span>
+                                <span className={`text-[10px] uppercase px-2 py-0.5 rounded-lg border ${st.cls}`}>
+                                  {st.label}
+                                </span>
+                              </div>
+
+                              <h4 className="font-black text-slate-900 text-xs uppercase tracking-tight">
+                                {q.title || `Opción ${qIdx + 1}`}
+                              </h4>
+
+                              <div className="space-y-1 text-xs text-slate-600 font-semibold">
+                                <p className="flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                  <span>{q.destination || 'Sin destino'}</span>
+                                </p>
+                                {q.startDate && (
+                                  <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    <span>{fmtDate(q.startDate)} {q.endDate ? `al ${fmtDate(q.endDate)}` : ''}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[9px] font-black text-slate-400 uppercase">Precio Opción</p>
+                                <p className="font-black text-orange-600 text-sm">{q.currency || 'USD'} ${fmtVal(totalSale)}</p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleLoadQuote(q)}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase rounded-xl transition-all cursor-pointer shadow-2xs"
+                                >
+                                  Cargar Opción
+                                </button>
+                                <button
+                                  onClick={() => setQuoteToDelete(q)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -2694,119 +3138,140 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       {/* VISTA 3: FORMULARIO COTIZADOR MAESTRO */}
       {viewMode === 'builder' && (
         <div className="space-y-8">
-          {/* HEADER DEL COTIZADOR */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
-                <Plane className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Cotizador Maestro</h1>
-                <p className="text-xs text-slate-500 font-semibold">Gestión Experta de Viajes e Itinerarios Turísticos</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-4">
-              {/* AUTOSAVE BADGE */}
-              {autoSaveStatus !== 'idle' && (
-                <div className="hidden sm:flex items-center">
-                  {autoSaveStatus === 'saving' && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 text-xs font-black rounded-xl border border-amber-200 shadow-2xs animate-pulse">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" /> Guardando...
-                    </span>
-                  )}
-                  {autoSaveStatus === 'saved' && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-200 shadow-2xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Autoguardado
-                    </span>
-                  )}
-                  {autoSaveStatus === 'unsaved' && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-500 text-xs font-bold rounded-xl border border-slate-200/80">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" /> Cambios pendientes
-                    </span>
-                  )}
+          {/* HEADER DEL COTIZADOR MAESTRO (CLEAN TOOLBAR & HIÉRARQUÍA VISUAL PRO) */}
+          <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs space-y-4">
+            {/* LÍNEA SUPERIOR: TÍTULO + STATUS AUTOGUARDADO + ACCIONES PRINCIPALES */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 bg-orange-500 rounded-2xl flex items-center justify-center text-white shadow-md shadow-orange-500/20 shrink-0">
+                  <Plane className="w-5 h-5" />
                 </div>
-              )}
-
-              {/* MONEDA SELECTOR */}
-              <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                {(['USD', 'ARS', 'EUR'] as const).map(curr => (
-                  <button
-                    key={curr}
-                    onClick={() => setQuote(prev => ({ ...prev, currency: curr }))}
-                    className={`px-4 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                      quote.currency === curr ? 'bg-white text-slate-900 shadow-xs border border-slate-200' : 'text-slate-400 hover:text-slate-700'
-                    }`}
-                  >
-                    {curr}
-                  </button>
-                ))}
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h1 className="text-xl font-black text-slate-900 uppercase tracking-tight">Cotizador Maestro</h1>
+                    {/* AUTOSAVE BADGE INLINE */}
+                    {autoSaveStatus !== 'idle' && (
+                      <span className="hidden sm:inline-flex items-center">
+                        {autoSaveStatus === 'saving' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 text-amber-700 text-[11px] font-black rounded-lg border border-amber-200 animate-pulse">
+                            <RefreshCw className="w-3 h-3 animate-spin text-amber-600" /> Guardando...
+                          </span>
+                        )}
+                        {autoSaveStatus === 'saved' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[11px] font-black rounded-lg border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Guardado
+                          </span>
+                        )}
+                        {autoSaveStatus === 'unsaved' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[11px] font-bold rounded-lg">
+                            <Clock className="w-3 h-3 text-slate-400" /> Cambios pendientes
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Gestión de itinerarios, servicios y cotización financiera</p>
+                </div>
               </div>
 
-              {/* EXPORT PDF BUTTON */}
-              <button
-                type="button"
-                onClick={() => setShowExportModal(true)}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <FileText className="w-4 h-4" /> Exportar PDF
-              </button>
+              {/* TOOLBAR ACCIONES SUPERIORES (TODO EN 1 FILA ORGANIZADA) */}
+              <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-end">
+                {/* SELECTOR DE MONEDA DE COTIZACIÓN */}
+                <div className="flex bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0">
+                  {(['USD', 'ARS', 'EUR'] as const).map(curr => (
+                    <button
+                      key={curr}
+                      type="button"
+                      onClick={() => setQuote(prev => ({ ...prev, currency: curr }))}
+                      className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        quote.currency === curr ? 'bg-white text-slate-900 shadow-2xs font-black' : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      {curr}
+                    </button>
+                  ))}
+                </div>
 
-              {/* CRM SAVE BUTTON */}
-              <button
-                onClick={handleSaveCRM}
-                className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-orange-500/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <Save className="w-4 h-4" /> Guardar CRM
-              </button>
+                {/* DUPLICAR VARIANTE (BOTÓN SECUNDARIO OUTLINE) */}
+                <button
+                  type="button"
+                  onClick={handleDuplicateAsVariant}
+                  className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                  title="Clona esta cotización como nueva variante B para el mismo pasajero"
+                >
+                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Variante B</span>
+                </button>
+
+                {/* EXPORTAR PDF (BOTÓN SECUNDARIO INDIGO) */}
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(true)}
+                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl border border-indigo-200/80 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" /> Exportar PDF
+                </button>
+
+                {/* GUARDAR CRM (CTA PRINCIPAL ORANGE) */}
+                <button
+                  type="button"
+                  onClick={handleSaveCRM}
+                  className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md shadow-orange-500/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Save className="w-4 h-4" /> Guardar CRM
+                </button>
+              </div>
+            </div>
+
+            {/* ESTADO COMERCIAL (PIPELINE STEPPER INTEGRADO DE 1 SOLA FILA) */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pt-1">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5 shrink-0">
+                <Sparkles className="w-3.5 h-3.5 text-orange-500" /> Estado Comercial:
+              </span>
+
+              <div className="flex items-center bg-slate-100/70 p-1 rounded-xl border border-slate-200/60 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden gap-1 w-full sm:w-auto">
+                {[
+                  { id: 'draft', label: 'Borrador', icon: FileText, activeCls: 'bg-white text-slate-900 shadow-2xs font-black' },
+                  { id: 'sent', label: 'Enviada', icon: Send, activeCls: 'bg-amber-500 text-white shadow-2xs font-black' },
+                  { id: 'follow_up', label: 'Seguimiento', icon: Clock, activeCls: 'bg-blue-600 text-white shadow-2xs font-black' },
+                  { id: 'reserved', label: 'Reservada', icon: ShieldCheck, activeCls: 'bg-purple-600 text-white shadow-2xs font-black' },
+                  { id: 'sold', label: 'Vendida', icon: CheckCircle2, activeCls: 'bg-emerald-600 text-white shadow-2xs font-black' },
+                  { id: 'lost', label: 'Perdida', icon: XCircle, activeCls: 'bg-red-600 text-white shadow-2xs font-black' }
+                ].map(st => {
+                  const isActive = quote.status === st.id;
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleStatusChange(st.id as any)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                        isActive
+                          ? st.activeCls
+                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
+                      }`}
+                    >
+                      <st.icon className="w-3.5 h-3.5" />
+                      <span>{st.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
-          {/* STATUS STEPPER PIPELINE */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-orange-500" /> Estado Comercial:
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { id: 'draft', label: 'Borrador', icon: FileText, cls: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200', activeCls: 'bg-slate-900 text-white border-slate-900 shadow-xs font-black' },
-                { id: 'sent', label: 'Enviada', icon: Send, cls: 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200', activeCls: 'bg-amber-500 text-white border-amber-600 shadow-xs font-black' },
-                { id: 'follow_up', label: 'Seguimiento', icon: Clock, cls: 'bg-blue-50 text-blue-800 hover:bg-blue-100 border-blue-200', activeCls: 'bg-blue-600 text-white border-blue-700 shadow-xs font-black' },
-                { id: 'reserved', label: 'Reservada', icon: ShieldCheck, cls: 'bg-purple-50 text-purple-800 hover:bg-purple-100 border-purple-200', activeCls: 'bg-purple-600 text-white border-purple-700 shadow-xs font-black' },
-                { id: 'sold', label: 'Vendida / Ganada', icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-200', activeCls: 'bg-emerald-600 text-white border-emerald-700 shadow-xs font-black' },
-                { id: 'lost', label: 'Perdida', icon: XCircle, cls: 'bg-red-50 text-red-800 hover:bg-red-100 border-red-200', activeCls: 'bg-red-600 text-white border-red-700 shadow-xs font-black' }
-              ].map(st => {
-                const isActive = quote.status === st.id;
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => handleStatusChange(st.id as any)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                      isActive ? st.activeCls : st.cls
-                    }`}
-                  >
-                    <st.icon className="w-3.5 h-3.5" />
-                    <span>{st.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* SOLICITUD INICIAL DEL CLIENTE / BRIEFING DEL VIAJE */}
-          <div className="bg-amber-50/60 p-5 rounded-3xl border border-amber-200/80 shadow-2xs space-y-2">
+          {/* SOLICITUD INICIAL DEL CLIENTE / BRIEFING DEL VIAJE (REDISENO LIMPIO NEUTRO) */}
+          <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200 space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black uppercase text-amber-900 tracking-wider flex items-center gap-2">
-                <Clipboard className="w-4 h-4 text-amber-600" /> Solicitud Inicial del Cliente / Briefing del Viaje
+              <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-2">
+                <Clipboard className="w-4 h-4 text-orange-500" /> Briefing / Pedido Inicial del Cliente
               </h3>
-              <span className="text-[10px] font-bold text-amber-700">Puntapié inicial para armado del itinerario</span>
+              <span className="text-[10.5px] font-medium text-slate-400">Puntapié inicial para armado del paquete</span>
             </div>
             <textarea
               value={quote.clientRequestNotes || ''}
               onChange={e => setQuote(prev => ({ ...prev, clientRequestNotes: e.target.value }))}
               placeholder="Volcá aquí el pedido original enviado por el pasajero (Ej: Matrimonio con 2 hijos solicitan paquete de 10 noches a Bariloche en julio con hotel 4 estrellas c/desayuno y excursión al Cerro Catedral)..."
-              className="w-full bg-white border border-amber-200 px-4 py-3 rounded-2xl text-xs font-semibold text-slate-800 outline-none focus:border-amber-500 transition-all min-h-[70px] resize-y"
+              className="w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-orange-500 transition-all min-h-[65px] resize-y"
             />
           </div>
 
@@ -6161,6 +6626,17 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
           </div>
         </div>
       )}
+
+      {/* MODAL COTIZADOR EXPRÉS IA (SMART PASTE & WHATSAPP) */}
+      <ExpressQuoteModal
+        isOpen={showExpressQuoteModal}
+        onClose={() => {
+          setShowExpressQuoteModal(false);
+          setPastedFileForExpress(null);
+        }}
+        onImportQuote={handleImportExpressQuote}
+        pastedImageFile={pastedFileForExpress}
+      />
 
     </div>
   )

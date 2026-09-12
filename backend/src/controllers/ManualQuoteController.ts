@@ -223,6 +223,25 @@ export class ManualQuoteController {
         }
     }
 
+    static async parseExpressQuote(req: Request, res: Response) {
+        try {
+            const { images, prompt } = req.body;
+            if (!images || !Array.isArray(images) || images.length === 0) {
+                return res.status(400).json({ message: "Se requiere al menos una imagen en base64" });
+            }
+
+            const { GeminiVisionService } = require("../services/GeminiVisionService");
+            const vision = new GeminiVisionService();
+            const agencyName = process.env.AGENCY_NAME || "Concepto Evt";
+            
+            const result = await vision.parseExpressQuote(images, prompt, agencyName);
+            return res.json(result);
+        } catch (error: any) {
+            console.error("Error in parseExpressQuote:", error);
+            return res.status(500).json({ message: error.message || "Error al procesar la cotización exprés con la IA" });
+        }
+    }
+
     static async remove(req: Request, res: Response) {
         try {
             const { id } = req.params;
