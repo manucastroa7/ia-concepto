@@ -2,13 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================
+   SISTEMA DE DISEÑO GLOBAL - TOKENS DE DISEÑO
+   ========================================== */
 :root {
   font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light;
-  color: #1e293b; /* text-slate-800 */
-  background-color: #f8fafc; /* bg-slate-50 */
+  
+  /* Colores Principales y Secundarios */
+  --color-primary: #f97316;        /* Orange-500 */
+  --color-primary-hover: #ea580c;  /* Orange-600 */
+  --color-primary-light: #fff7ed;  /* Orange-50 */
+  
+  --color-secondary: #4f46e5;      /* Indigo-600 */
+  --color-secondary-hover: #4338ca;/* Indigo-700 */
+  --color-secondary-light: #eef2ff;/* Indigo-50 */
+  
+  /* Superficies y Fondos */
+  --color-background: #f8fafc;     /* Slate-50 */
+  --color-surface: #ffffff;        /* White */
+  --color-surface-subtle: #f1f5f9; /* Slate-100 */
+  
+  /* Texto */
+  --color-text: #0f172a;           /* Slate-900 */
+  --color-text-secondary: #475569; /* Slate-600 */
+  --color-text-muted: #94a3b8;     /* Slate-400 */
+  
+  /* Bordes */
+  --color-border: #e2e8f0;         /* Slate-200 */
+  --color-border-light: #f1f5f9;   /* Slate-100 */
+  
+  /* Estados de Feedback */
+  --color-success: #10b981;        /* Emerald-500 */
+  --color-success-light: #ecfdf5;  /* Emerald-50 */
+  --color-warning: #f59e0b;        /* Amber-500 */
+  --color-warning-light: #fffbeb;  /* Amber-50 */
+  --color-danger: #ef4444;         /* Red-500 */
+  --color-danger-light: #fef2f2;   /* Red-50 */
+  --color-info: #0284c7;           /* Sky-600 */
+  --color-info-light: #f0f9ff;     /* Sky-50 */
+
+  /* Radios y Espaciados */
+  --radius-sm: 0.5rem;   /* 8px */
+  --radius-md: 0.75rem;  /* 12px */
+  --radius-lg: 1rem;     /* 16px */
+  --radius-xl: 1.5rem;   /* 24px */
+
+  /* Sombras Unificadas */
+  --shadow-subtle: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.03), 0 2px 4px -2px rgb(0 0 0 / 0.03);
 }
 
 html,
@@ -18,7 +62,8 @@ body,
   max-width: 100%;
   height: 100%;
   min-height: 100%;
-  background-color: #f8fafc;
+  background-color: var(--color-background);
+  color: var(--color-text);
 }
 
 body {
@@ -30,21 +75,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar - Light Theme */
-::-webkit-scrollbar { width: 8px; }
+/* Scrollbars Personalizadas */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: #f1f5f9; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-.premium-shadow {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-}
-
-.glass-surface {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(8px);
-  border: 1px solid #e2e8f0;
-}
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -55,76 +90,138 @@ body {
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Force all standard headers and labels to be black */
   h1, h2, h3, h4, h5, h6 {
-    @apply text-slate-900;
+    @apply text-slate-900 font-bold;
   }
 }
 
+/* ==========================================
+   COMPONENTES REUTILIZABLES UNIFICADOS (UI)
+   ========================================== */
 @layer components {
-  .page-title {
-    @apply text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none mb-2;
+
+  /* Tipografías y Jerarquía de Encabezados */
+  .app-page-title {
+    @apply text-2xl md:text-3xl font-black text-slate-900 uppercase tracking-tight leading-none mb-1;
   }
 
-  .page-subtitle {
-     @apply text-[10px] font-black text-slate-600 uppercase tracking-[0.2em];
+  .app-page-subtitle {
+    @apply text-xs font-semibold text-slate-500 tracking-wide;
   }
 
-  /* Updated Sidebar Items for maximum contrast */
-  .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 font-black text-[10px] uppercase tracking-widest text-slate-900;
+  .app-section-title {
+    @apply text-sm font-black text-slate-900 uppercase tracking-wider mb-3 block;
   }
 
-  .sidebar-item.active {
-    @apply bg-white text-slate-900 shadow-xl shadow-slate-200/50 border border-slate-100;
-  }
-  
-  .sidebar-item.active .icon-box {
-    @apply text-orange-500 bg-orange-50;
+  .app-card-title {
+    @apply text-base font-bold text-slate-900 tracking-tight;
   }
 
-  /* Placeholder normalization */
-  .standard-input::placeholder {
-    @apply text-slate-400 font-medium;
-  }
-  
-  .standard-input {
-    @apply w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-900 outline-none transition-all focus:border-orange-500/50 focus:ring-4 focus:ring-orange-500/5 shadow-sm;
+  .app-label {
+    @apply block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5;
   }
 
-  .premium-card {
-    @apply bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/40;
-  }
-  
-  .section-label {
-    @apply text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] mb-4 block;
+  /* Tarjetas y Superficies Visuales */
+  .app-card {
+    @apply bg-white border border-slate-200/90 rounded-2xl p-5 md:p-6 shadow-sm transition-all;
   }
 
-  .btn {
-    @apply px-6 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm;
+  .app-card-flat {
+    @apply bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 md:p-5;
   }
 
-  .btn-primary {
-    @apply btn bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30;
+  .app-card-header {
+    @apply flex items-center justify-between pb-4 mb-4 border-b border-slate-100;
   }
 
-  .btn-secondary {
-    @apply btn bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300;
+  /* Botones Estandarizados */
+  .app-btn {
+    @apply px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 cursor-pointer shadow-sm;
   }
 
-  .btn-outline {
-    @apply btn border-2 border-slate-200 text-slate-500 hover:border-orange-500/30 hover:text-orange-500;
+  .app-btn-primary {
+    @apply app-btn bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20 hover:shadow-md;
   }
 
-  .badge {
-     @apply px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border;
+  .app-btn-secondary {
+    @apply app-btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300;
   }
 
-  .badge-orange { @apply bg-orange-50 text-orange-600 border-orange-100; }
-  .badge-slate { @apply bg-slate-50 text-slate-600 border-slate-200; }
-  .badge-blue { @apply bg-blue-50 text-blue-600 border-blue-100; }
+  .app-btn-indigo {
+    @apply app-btn bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20 hover:shadow-md;
+  }
 
-  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-  .custom-scrollbar::-webkit-scrollbar-track { @apply bg-slate-50/50; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full hover:bg-orange-400 transition-colors; }
+  .app-btn-outline {
+    @apply app-btn bg-transparent border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300;
+  }
+
+  .app-btn-ghost {
+    @apply app-btn bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 shadow-none;
+  }
+
+  .app-btn-danger {
+    @apply app-btn bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/20;
+  }
+
+  .app-btn-icon {
+    @apply p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-900 transition-all cursor-pointer shadow-sm disabled:opacity-50;
+  }
+
+  /* Inputs, Selects y Textareas */
+  .app-input {
+    @apply w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 transition-all disabled:bg-slate-100 disabled:text-slate-400 placeholder:text-slate-400;
+  }
+
+  .app-select {
+    @apply w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 transition-all cursor-pointer disabled:bg-slate-100 disabled:text-slate-400;
+  }
+
+  .app-textarea {
+    @apply w-full bg-white border border-slate-200 rounded-xl p-3.5 text-xs font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 transition-all placeholder:text-slate-400;
+  }
+
+  /* Badges e Insignias de Estado */
+  .app-badge {
+    @apply inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border;
+  }
+
+  .app-badge-slate { @apply app-badge bg-slate-100 text-slate-700 border-slate-200; }
+  .app-badge-amber { @apply app-badge bg-amber-50 text-amber-800 border-amber-200; }
+  .app-badge-emerald { @apply app-badge bg-emerald-50 text-emerald-800 border-emerald-200; }
+  .app-badge-indigo { @apply app-badge bg-indigo-50 text-indigo-800 border-indigo-200; }
+  .app-badge-rose { @apply app-badge bg-rose-50 text-rose-800 border-rose-200; }
+  .app-badge-sky { @apply app-badge bg-sky-50 text-sky-800 border-sky-200; }
+  .app-badge-orange { @apply app-badge bg-orange-50 text-orange-700 border-orange-200; }
+
+  /* Tablas Estandarizadas */
+  .app-table-container {
+    @apply overflow-hidden border border-slate-200/90 rounded-2xl bg-white shadow-sm;
+  }
+
+  .app-table {
+    @apply w-full text-xs text-left border-collapse;
+  }
+
+  .app-table-header {
+    @apply bg-slate-50 text-slate-600 font-bold uppercase text-[10.5px] tracking-wider border-b border-slate-200;
+  }
+
+  .app-table-row {
+    @apply h-14 hover:bg-slate-50/80 transition-colors align-middle;
+  }
+
+  .app-table-cell {
+    @apply px-4 py-2 align-middle whitespace-nowrap;
+  }
+
+  /* Compatibilidad con clases anteriores */
+  .page-title { @apply app-page-title; }
+  .page-subtitle { @apply app-page-subtitle; }
+  .standard-input { @apply app-input; }
+  .premium-card { @apply app-card; }
+  .btn { @apply app-btn; }
+  .btn-primary { @apply app-btn-primary; }
+  .btn-secondary { @apply app-btn-secondary; }
+  .btn-outline { @apply app-btn-outline; }
+  .badge { @apply app-badge; }
 }

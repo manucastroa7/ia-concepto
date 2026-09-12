@@ -365,7 +365,7 @@ REGLAS ESTRUCTURALES:
 
   async extractServiceVoucherData(fileBuffer: Buffer, mimeType: string) {
     const base64 = fileBuffer.toString("base64");
-    const prompt = `Analiza esta imagen o captura de pantalla de voucher, confirmación de reserva, comprobante o pantalla de sistema de viajes (Traslado, Hotel, Tren, Excursión, Asistencia Médica, etc.). Extrae la información en formato JSON puro, sin bloques markdown:
+    const prompt = `Analiza esta imagen o captura de pantalla de voucher, confirmación de reserva, liquidación de mayorista, detalle de compra o pantalla de sistema de viajes (Traslado, Hotel, Tren, Excursión, Asistencia Médica, etc.). Extrae la información en formato JSON puro, sin bloques markdown:
 
 FORMATO JSON DE SALIDA OBLIGATORIO:
 {
@@ -385,7 +385,7 @@ FORMATO JSON DE SALIDA OBLIGATORIO:
   "trainNumber": "Número de tren (ej: ave - 2133, AVE 0314)",
   "classType": "Clase o información de asiento (ej: Preferente, Reserva de asiento incluida)",
   "flightNumber": "Número de vuelo o tren de llegada/conexión si figura (ej: AR1132, 1132 - Aerolineas Argentinas)",
-  "providerName": "Nombre del proveedor, compañía o vendedor si figura (ej: Renfe, Mailen Fernandez)",
+  "providerName": "Nombre del proveedor, compañía o vendedor si figura (ej: Eurovips, Renfe, Juliá)",
   "assistanceCompany": "Compañía de asistencia médica (ej: Assist Card, Universal Assistance, Coris, Pax Assistance)",
   "productName": "Nombre del producto o plan de asistencia (ej: AC 100, Master, AC 60)",
   "coverageAmount": "Monto o límite de cobertura médica (ej: USD 100.000, EUR 30.000)",
@@ -393,14 +393,19 @@ FORMATO JSON DE SALIDA OBLIGATORIO:
   "startDate": "Fecha de inicio de vigencia DD/MM/YYYY (ej: 20/07/2026)",
   "endDate": "Fecha de fin de vigencia DD/MM/YYYY (ej: 05/08/2026)",
   "documentNumber": "Número de documento de viaje, DNI o Pasaporte del asegurado (ej: 53583426)",
-  "price": 56.52,
+  "price": 694.77,
+  "baseNetCost": 606.32,
+  "commissionValue": 88.46,
   "currency": "EUR" | "USD" | "ARS",
-  "description": "Cualquier nota adicional relevante (ej: AC 100 - Cobertura: USD 100.000)"
+  "description": "Cualquier nota adicional relevante (ej: Tarifas de reserva - Precio al pasajero: USD 694,77)"
 }
 
 REGLAS STRICTAS:
 - Extrae con la mayor exactitud posible los nombres de lugares, fechas, horas y códigos de confirmación.
-- Si la imagen contiene un precio o tarifa (ej: EUR 56,52), extrae el número flotante en 'price' (56.52) y la moneda en 'currency'.
+- Si la imagen contiene un desglose de liquidación / tarifa de reserva de mayorista:
+  * "price": Extrae 'Precio de venta al pasajero' o 'Precio de venta reserva' (ej: 694.77).
+  * "baseNetCost": Extrae 'Neto a pagar de agencia' (ej: 606.32).
+  * "commissionValue": Extrae 'Comisión' (ej: 88.46).
 - Si no está presente algún campo, usa null.
 - Responde ÚNICAMENTE con el JSON válido.`;
 
@@ -451,14 +456,21 @@ REGLAS STRICTAS DE EXTRACCIÓN:
     quoteData: any;
   }> {
     const prompt = `Sos un agente de viajes experto de la agencia "${agencyName}". 
-Se te han adjuntado ${images.length} capturas de pantalla con vuelos, itinerarios, opciones de pasajes o tarifarios.
+Se te han adjuntado ${images.length} capturas de pantalla con vuelos, itinerarios, opciones de pasajes, liquidaciones o tarifarios de reserva de mayorista/operador.
 El usuario ha dado las siguientes INSTRUCCIONES ESPECÍFICAS DE PRECIO Y CONTENIDO:
-"${userPrompt || 'Cotizar el viaje detectado con un margen estándar de ganancia de 15% o fee correspondiente.'}"
+"${userPrompt || 'Cotizar el viaje/servicio detectado respetando la tarifa capturada o con el margen correspondiente.'}"
 
-REGLAS CRÍTICAS DE MULTI-IMAGEN Y MULTI-OPCIÓN:
+REGLAS CRÍTICAS DE MULTI-IMAGEN, TARIFARIOS Y LIQUIDACIONES:
 1. DEBES LEER Y ANALIZAR CADA UNA DE LAS ${images.length} IMÁGENES ADJUNTAS.
-2. Si el usuario indica varias opciones (ej: "las imágenes 1 y 2 son Opción 1, e imágenes 3 y 4 son Opción 2"), DEBES EXTRAER Y REDACTAR AMBAS OPCIONES COMPLETAS EN EL "whatsappText". ¡NUNCA digas "A confirmar" ni pongas "(según imágenes 3 y 4)"! Si las imágenes están subidas, tienes la información y DEBES mostrar ambas opciones con sus aerolíneas, horarios y precios finales.
-3. ES ESTRICTAMENTE OBLIGATORIO INCLUIR EL NOMBRE DE LA AEROLÍNEA para cada opción o vuelo (ej: "✈️ Aerolínea: Aerolíneas Argentinas", "✈️ Aerolínea: Flybondi", "✈️ Aerolínea: JetSMART", "✈️ Aerolínea: Iberia", etc.).
+2. LECTURA DE LIQUIDACIONES Y DESGLOSES DE TARIFAS DE RESERVA (Mayoristas / Operadores como Eurovips, Juliá, Ola, Tucano, Almundo, Logan, etc.):
+   - Si la captura muestra un desglose de "Tarifas de reserva", "Detalle de compra" o "Liquidación":
+     * "Neto a pagar de agencia" → Corresponde al Costo Neto Base ("baseNetCost").
+     * "Precio de venta al pasajero" o "Precio de venta reserva" → Corresponde al Precio Final de Venta al cliente ("price" / "soldPriceCollected").
+     * "Comisión" → Corresponde a la Ganancia o Comisión de la Agencia ("commissionValue").
+     * "Gastos adm." e "IVA" → Corresponden a gastos/ajustes administrativos ("adjustments").
+     * "Moneda" → Detectar si es USD, ARS o EUR.
+3. Si la captura es un vuelo u hotel regular:
+   - Extraer aerolínea, tramos IATA, fechas, horarios y equipaje.
 4. REGLA DE ORO DE PRECIOS POR PASAJERO Y TOTAL:
    - NUNCA muestres desgloses de costos netos, comisiones, márgenes ni fees por separado en "whatsappText". El cliente solo ve el PRECIO FINAL CON TODO INCLUIDO.
    - REGLA ESPECÍFICA PARA PRECIO POR PASAJERO: SIEMPRE QUE SE COTICE PARA 2 O MÁS PASAJEROS O APAREZCA LA TARIFA UNITARIA EN LA CAPTURA, DEBES MOSTRAR CLARAMENTE EL "PRECIO POR PASAJERO" Y EL "PRECIO TOTAL FINAL DEL GRUPO".

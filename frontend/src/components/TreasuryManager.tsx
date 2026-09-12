@@ -186,18 +186,18 @@ export function TreasuryManager() {
             </div>
           </section>
 
-          <form onSubmit={saveAccount} className="premium-card !rounded-2xl !p-5 space-y-3">
-            <h2 className="text-sm font-black text-slate-900 uppercase tracking-[0.16em]">Nueva cuenta</h2>
-            <input className="standard-input" value={accountForm.name} onChange={event => setAccountForm(current => ({ ...current, name: event.target.value }))} placeholder="Nombre de cuenta" />
+          <form onSubmit={saveAccount} className="app-card !p-5 space-y-3">
+            <h2 className="app-section-title !mb-2">Nueva cuenta</h2>
+            <input className="app-input" value={accountForm.name} onChange={event => setAccountForm(current => ({ ...current, name: event.target.value }))} placeholder="Nombre de cuenta" />
             <div className="grid grid-cols-2 gap-3">
-              <select className="standard-input" value={accountForm.currency} onChange={event => setAccountForm(current => ({ ...current, currency: event.target.value }))}>
+              <select className="app-select" value={accountForm.currency} onChange={event => setAccountForm(current => ({ ...current, currency: event.target.value }))}>
                 <option value="ARS">ARS</option>
                 <option value="USD">USD</option>
                 <option value="EUR">EUR</option>
               </select>
-              <input className="standard-input" type="number" value={accountForm.initialBalance} onChange={event => setAccountForm(current => ({ ...current, initialBalance: Number(event.target.value) }))} placeholder="Saldo inicial" />
+              <input className="app-input" type="number" value={accountForm.initialBalance} onChange={event => setAccountForm(current => ({ ...current, initialBalance: Number(event.target.value) }))} placeholder="Saldo inicial" />
             </div>
-            <button className="btn-primary w-full" type="submit">
+            <button className="app-btn-primary w-full" type="submit">
               <Plus className="w-4 h-4" /> Crear cuenta
             </button>
           </form>
@@ -205,37 +205,37 @@ export function TreasuryManager() {
 
         <main className="xl:col-span-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="premium-card !rounded-2xl !p-5">
-              <p className="section-label !mb-2">Ingresos</p>
+            <div className="app-card !p-5">
+              <p className="app-label !mb-1">Ingresos</p>
               <p className="text-2xl font-black text-emerald-600">${fmtMoney(movementSummary.income)}</p>
             </div>
-            <div className="premium-card !rounded-2xl !p-5">
-              <p className="section-label !mb-2">Gastos</p>
-              <p className="text-2xl font-black text-red-600">${fmtMoney(movementSummary.expense)}</p>
+            <div className="app-card !p-5">
+              <p className="app-label !mb-1">Gastos</p>
+              <p className="text-2xl font-black text-rose-600">${fmtMoney(movementSummary.expense)}</p>
             </div>
-            <div className="premium-card !rounded-2xl !p-5">
-              <p className="section-label !mb-2">Resultado</p>
+            <div className="app-card !p-5">
+              <p className="app-label !mb-1">Resultado</p>
               <p className="text-2xl font-black text-slate-900">${fmtMoney(movementSummary.income - movementSummary.expense)}</p>
             </div>
           </div>
 
-          <form onSubmit={saveTransaction} className="premium-card !rounded-2xl !p-5 space-y-4">
+          <form onSubmit={saveTransaction} className="app-card !p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-[0.16em]">Registrar movimiento</h2>
-              <button className="btn-primary" type="submit">
+              <h2 className="app-section-title !mb-0">Registrar movimiento</h2>
+              <button className="app-btn-primary" type="submit">
                 <Save className="w-4 h-4" /> Guardar
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <select className="standard-input" value={transactionForm.accountId} onChange={event => setTransactionForm(current => ({ ...current, accountId: event.target.value }))}>
+              <select className="app-select" value={transactionForm.accountId} onChange={event => setTransactionForm(current => ({ ...current, accountId: event.target.value }))}>
                 <option value="">Cuenta</option>
                 {accounts.map(account => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}
               </select>
-              <select className="standard-input" value={transactionForm.type} onChange={event => setTransactionForm(current => ({ ...current, type: event.target.value }))}>
+              <select className="app-select" value={transactionForm.type} onChange={event => setTransactionForm(current => ({ ...current, type: event.target.value }))}>
                 <option value="income">Ingreso</option>
                 <option value="expense">Gasto</option>
               </select>
-              <select className="standard-input" value={transactionForm.category} onChange={event => setTransactionForm(current => ({ ...current, category: event.target.value }))}>
+              <select className="app-select" value={transactionForm.category} onChange={event => setTransactionForm(current => ({ ...current, category: event.target.value }))}>
                 <option value="client_payment">Cobro cliente</option>
                 <option value="provider_payment">Pago proveedor</option>
                 <option value="operating_expense">Gasto operativo</option>
@@ -243,17 +243,17 @@ export function TreasuryManager() {
                 <option value="transfer">Transferencia</option>
                 <option value="other">Otro</option>
               </select>
-              <input className="standard-input" type="number" value={transactionForm.amount} onChange={event => setTransactionForm(current => ({ ...current, amount: event.target.value }))} placeholder="Monto" />
-              <input className="standard-input" type="date" value={transactionForm.date} onChange={event => setTransactionForm(current => ({ ...current, date: event.target.value }))} />
-              <select className="standard-input" value={transactionForm.paymentMethod} onChange={event => setTransactionForm(current => ({ ...current, paymentMethod: event.target.value }))}>
+              <input className="app-input" type="number" value={transactionForm.amount} onChange={event => setTransactionForm(current => ({ ...current, amount: event.target.value }))} placeholder="Monto" />
+              <input className="app-input" type="date" value={transactionForm.date} onChange={event => setTransactionForm(current => ({ ...current, date: event.target.value }))} />
+              <select className="app-select" value={transactionForm.paymentMethod} onChange={event => setTransactionForm(current => ({ ...current, paymentMethod: event.target.value }))}>
                 <option value="transfer">Transferencia</option>
                 <option value="cash">Efectivo</option>
                 <option value="card">Tarjeta</option>
                 <option value="mp">Mercado Pago</option>
                 <option value="other">Otro</option>
               </select>
-              <input className="standard-input md:col-span-2" value={transactionForm.reference} onChange={event => setTransactionForm(current => ({ ...current, reference: event.target.value }))} placeholder="Referencia / de donde viene o a donde va" />
-              <select className="standard-input" value={transactionForm.relatedEntityType} onChange={event => setTransactionForm(current => ({ ...current, relatedEntityType: event.target.value }))}>
+              <input className="app-input md:col-span-2" value={transactionForm.reference} onChange={event => setTransactionForm(current => ({ ...current, reference: event.target.value }))} placeholder="Referencia / de donde viene o a donde va" />
+              <select className="app-select" value={transactionForm.relatedEntityType} onChange={event => setTransactionForm(current => ({ ...current, relatedEntityType: event.target.value }))}>
                 <option value="">Sin vinculo</option>
                 <option value="ManualQuote">Cotizacion individual</option>
                 <option value="GroupQuote">Cotizacion grupal</option>
@@ -264,21 +264,21 @@ export function TreasuryManager() {
             </div>
           </form>
 
-          <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <section className="app-table-container">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-[0.16em]">Movimientos</h2>
-              <span className="badge badge-slate">{filteredTransactions.length}</span>
+              <h2 className="app-section-title !mb-0">Movimientos</h2>
+              <span className="app-badge-slate">{filteredTransactions.length}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Fecha</th>
-                    <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Cuenta</th>
-                    <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Origen / destino</th>
-                    <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Categoria</th>
-                    <th className="px-5 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Monto</th>
-                    <th className="px-5 py-4"></th>
+              <table className="app-table">
+                <thead>
+                  <tr className="app-table-header h-11">
+                    <th className="px-4 py-2 font-bold whitespace-nowrap">Fecha</th>
+                    <th className="px-4 py-2 font-bold whitespace-nowrap">Cuenta</th>
+                    <th className="px-4 py-2 font-bold whitespace-nowrap">Origen / destino</th>
+                    <th className="px-4 py-2 font-bold whitespace-nowrap">Categoria</th>
+                    <th className="px-4 py-2 font-bold text-right whitespace-nowrap">Monto</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -286,29 +286,29 @@ export function TreasuryManager() {
                     <tr><td colSpan={6} className="p-10 text-center text-xs font-black uppercase tracking-widest text-slate-400">No hay movimientos</td></tr>
                   )}
                   {filteredTransactions.map(tx => (
-                    <tr key={tx.id} className="hover:bg-slate-50">
-                      <td className="px-5 py-4 text-xs font-bold text-slate-600">{tx.date ? new Date(tx.date).toLocaleDateString('es-AR') : '-'}</td>
-                      <td className="px-5 py-4">
+                    <tr key={tx.id} className="app-table-row">
+                      <td className="px-4 py-2 align-middle text-xs font-bold text-slate-600">{tx.date ? new Date(tx.date).toLocaleDateString('es-AR') : '-'}</td>
+                      <td className="px-4 py-2 align-middle">
                         <div className="flex items-center gap-2">
                           <Landmark className="w-4 h-4 text-slate-400" />
                           <span className="text-xs font-black text-slate-800">{tx.account?.name || accounts.find(account => account.id === tx.accountId)?.name || 'Cuenta'}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-2 align-middle">
                         <p className="text-xs font-bold text-slate-800">{tx.reference || '-'}</p>
                         {tx.relatedEntityType && <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{tx.relatedEntityType}</p>}
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="badge badge-slate">{tx.category}</span>
+                      <td className="px-4 py-2 align-middle">
+                        <span className="app-badge-slate">{tx.category}</span>
                       </td>
-                      <td className={`px-5 py-4 text-right font-mono font-black ${tx.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <td className={`px-4 py-2 align-middle text-right font-mono font-black ${tx.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
                         <span className="inline-flex items-center justify-end gap-2">
                           {tx.type === 'income' ? <ArrowUpCircle className="w-4 h-4" /> : <ArrowDownCircle className="w-4 h-4" />}
                           {tx.type === 'income' ? '+' : '-'}${fmtMoney(tx.amount)}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <button onClick={() => deleteTransaction(tx.id)} className="p-2 rounded-xl bg-slate-100 text-red-500 hover:bg-red-50">
+                      <td className="px-4 py-2 align-middle text-right">
+                        <button onClick={() => deleteTransaction(tx.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>

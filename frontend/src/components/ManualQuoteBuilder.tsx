@@ -1358,14 +1358,27 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 }
               }
 
-              if (parsed.price && typeof parsed.price === 'number' && parsed.price > 0) {
+              let newPrice = it.price
+
+              if (parsed.baseNetCost && Number(parsed.baseNetCost) > 0) {
+                updatedEconomics.baseNetCost = Number(parsed.baseNetCost)
+              } else if (parsed.price && typeof parsed.price === 'number' && parsed.price > 0) {
                 updatedEconomics.baseNetCost = parsed.price
+              }
+
+              if (parsed.commissionValue && Number(parsed.commissionValue) > 0) {
+                updatedEconomics.commissionValue = Number(parsed.commissionValue)
+              }
+
+              if (parsed.price && typeof parsed.price === 'number' && parsed.price > 0) {
+                newPrice = parsed.price
               }
 
               return {
                 ...it,
                 details: updatedDetails,
-                economics: updatedEconomics
+                economics: updatedEconomics,
+                price: newPrice
               }
             }
             return it
@@ -2087,7 +2100,10 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
           items: prev.items.map(it => {
             if (it.id !== itemId) return it
             const newDetails = { ...it.details }
-            const hName = data.destination || data.origin || data.providerName
+            const newEconomics = { ...it.economics }
+            let newPrice = it.price
+
+            const hName = data.destination || data.origin || data.providerName || data.hotelName
             if (hName && !hName.includes('.png') && !hName.includes('PNG')) {
               newDetails.hotelName = hName
             }
@@ -2101,11 +2117,24 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             if (rawCheckOut) newDetails.checkOut = formatToInputDate(rawCheckOut) || rawCheckOut
             if (rawCancel) newDetails.cancellationDate = formatToInputDate(rawCancel) || rawCancel
 
-            return { ...it, details: newDetails }
+            // Auto-completar Precio de Venta, Costo Neto y Comisión desde la IA
+            if (data.price && Number(data.price) > 0) {
+              newPrice = Number(data.price)
+            }
+            if (data.baseNetCost && Number(data.baseNetCost) > 0) {
+              newEconomics.baseNetCost = Number(data.baseNetCost)
+            } else if (data.price && Number(data.price) > 0 && !newEconomics.baseNetCost) {
+              newEconomics.baseNetCost = Number(data.price)
+            }
+            if (data.commissionValue && Number(data.commissionValue) > 0) {
+              newEconomics.commissionValue = Number(data.commissionValue)
+            }
+
+            return { ...it, details: newDetails, economics: newEconomics, price: newPrice }
           })
         }))
         toast.dismiss('hotel-ocr')
-        toast.success('Reserva de hotel procesada con IA exitosamente')
+        toast.success('Reserva de hotel y tarifas procesadas con IA exitosamente')
         return
       }
     } catch (err) {
@@ -2356,76 +2385,85 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
           </div>
 
           {/* DASHBOARD KPIS SUPERIORES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-gradient-to-br from-slate-800 to-indigo-900 text-white p-4 rounded-2xl shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-300">Total Cotizaciones</p>
-                <p className="text-xl font-black mt-0.5">{listKpis.totalCount}</p>
-                <p className="text-[10.5px] text-amber-400 font-bold mt-1">USD ${fmtVal(listKpis.totalSaleSum)}</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-amber-400">
-                <FileText className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200 shadow-2xs flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1">
-                  💰 Ingresos Pendientes
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3.5">
+            {/* KPI 1: TOTAL COTIZACIONES */}
+            <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xs border border-slate-800 flex items-center justify-between gap-2.5 hover:border-slate-700 transition-all min-w-0 group">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">Total Cotizaciones</p>
+                <p className="text-xl font-black mt-1 leading-none text-white tracking-tight">{listKpis.totalCount}</p>
+                <p className="text-[11px] text-amber-400 font-extrabold mt-1.5 truncate">
+                  USD ${fmtVal(listKpis.totalSaleSum)}
                 </p>
-                <p className="text-xl font-black text-emerald-700 mt-0.5">USD ${fmtVal(listKpis.pendingCollectionSum)}</p>
-                <p className="text-[10px] text-emerald-600 font-semibold mt-1">Por percibir de clientes</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 font-black">
-                <DollarSign className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-white/10 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <FileText className="w-4.5 h-4.5" />
               </div>
             </div>
 
-            <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200 shadow-2xs flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">🟡 Reservas Confirmadas</p>
-                <p className="text-xl font-black text-amber-900 mt-0.5">{listKpis.reservedCount}</p>
-                <p className="text-[10px] text-amber-700 font-semibold mt-1">En proceso de seña / pago</p>
+            {/* KPI 2: INGRESOS PENDIENTES */}
+            <div className="bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200/90 shadow-2xs flex items-center justify-between gap-2.5 hover:border-emerald-300 transition-all min-w-0 group">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800 truncate">
+                  Ingresos Pendientes
+                </p>
+                <p className="text-xl font-black text-emerald-700 mt-1 leading-none tracking-tight truncate">USD ${fmtVal(listKpis.pendingCollectionSum)}</p>
+                <p className="text-[10px] text-emerald-600 font-semibold mt-1.5 truncate">Por percibir de clientes</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-800 font-black">
-                <Briefcase className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="bg-emerald-100/60 p-4 rounded-2xl border border-emerald-300 shadow-2xs flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">🟢 Viajes Vendidos</p>
-                <p className="text-xl font-black text-emerald-800 mt-0.5">{listKpis.soldCount}</p>
-                <p className="text-[10px] text-emerald-700 font-semibold mt-1">Operaciones cerradas</p>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-200/80 flex items-center justify-center text-emerald-800 font-black">
-                <CheckCircle2 className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 font-black group-hover:scale-105 transition-transform">
+                <DollarSign className="w-4.5 h-4.5" />
               </div>
             </div>
 
-            <div className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between transition-all ${
-              upcoming7DayDepartures.length > 0 ? 'bg-amber-100/80 border-amber-300' : 'bg-white border-slate-200/80'
+            {/* KPI 3: RESERVAS CONFIRMADAS */}
+            <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200/90 shadow-2xs flex items-center justify-between gap-2.5 hover:border-amber-300 transition-all min-w-0 group">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 truncate">Reservas Confirmadas</p>
+                <p className="text-xl font-black text-amber-900 mt-1 leading-none tracking-tight">{listKpis.reservedCount}</p>
+                <p className="text-[10px] text-amber-700 font-semibold mt-1.5 truncate">En proceso de seña/pago</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 font-black group-hover:scale-105 transition-transform">
+                <Briefcase className="w-4.5 h-4.5" />
+              </div>
+            </div>
+
+            {/* KPI 4: VIAJES VENDIDOS */}
+            <div className="bg-emerald-100/60 p-4 rounded-2xl border border-emerald-300/80 shadow-2xs flex items-center justify-between gap-2.5 hover:border-emerald-400 transition-all min-w-0 group">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900 truncate">Viajes Vendidos</p>
+                <p className="text-xl font-black text-emerald-800 mt-1 leading-none tracking-tight">{listKpis.soldCount}</p>
+                <p className="text-[10px] text-emerald-700 font-semibold mt-1.5 truncate">Operaciones cerradas</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-emerald-200/80 text-emerald-800 flex items-center justify-center shrink-0 font-black group-hover:scale-105 transition-transform">
+                <CheckCircle2 className="w-4.5 h-4.5" />
+              </div>
+            </div>
+
+            {/* KPI 5: SALIDAS EN 7 DÍAS */}
+            <div className={`p-4 rounded-2xl border shadow-2xs flex items-center justify-between gap-2.5 transition-all min-w-0 group col-span-2 sm:col-span-1 xl:col-span-1 ${
+              upcoming7DayDepartures.length > 0 ? 'bg-amber-100/80 border-amber-300 hover:border-amber-400' : 'bg-white border-slate-200/80 hover:border-slate-300'
             }`}>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Salidas en 7 Días
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1 truncate">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" /> Salidas en 7 Días
                 </p>
-                <p className="text-xl font-black text-amber-900 mt-0.5">{upcoming7DayDepartures.length}</p>
-                <p className="text-[10px] text-amber-700 font-bold mt-1">Reconfirmación requerida</p>
+                <p className="text-xl font-black text-amber-900 mt-1 leading-none tracking-tight">{upcoming7DayDepartures.length}</p>
+                <p className="text-[10px] text-amber-700 font-bold mt-1.5 truncate">Reconfirmación requerida</p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center">
-                <Clock className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <Clock className="w-4.5 h-4.5" />
               </div>
             </div>
           </div>
 
-          {/* TABLA DE INGRESOS PENDIENTES A ENTRAR POR PASAJERO */}
+          {/* TABLA / GRILLA DE INGRESOS PENDIENTES A ENTRAR POR PASAJERO */}
           <div className="space-y-4 pt-4 border-t border-slate-100">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-600" /> Cobros Pendientes a Entrar (Saldos a Percibir por Cliente)
               </h3>
-              <span className="text-[11px] font-bold text-slate-400">Total a Entrar: USD ${fmtVal(listKpis.pendingCollectionSum)}</span>
+              <span className="text-[11px] font-extrabold text-slate-500 bg-slate-100 px-3 py-1 rounded-xl border border-slate-200">
+                Total a Entrar: <strong className="text-emerald-700 font-black">USD ${fmtVal(listKpis.pendingCollectionSum)}</strong>
+              </span>
             </div>
 
             {historyQuotes.filter(q => q.status !== 'lost' && (
@@ -2438,11 +2476,11 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 return sale - collected > 0
               })()
             )).length === 0 ? (
-              <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs text-slate-500 font-medium">
+              <div className="p-8 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs text-slate-500 font-medium">
                 No hay saldos pendientes por cobrar en cotizaciones activas.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {historyQuotes.filter(q => q.status !== 'lost').map(q => {
                   let itemsList = q.items || []
                   if (typeof itemsList === 'string') { try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] } }
@@ -2455,47 +2493,56 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                   const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')
 
                   return (
-                    <div key={q.id} className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-200/80 space-y-3 shadow-2xs">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="text-xs font-black text-slate-900 uppercase">{clientName}</p>
-                          <p className="text-[11px] font-semibold text-slate-600 truncate">{q.title || 'Cotización de Viaje'}</p>
-                        </div>
-                        {(() => {
-                          const stKey = String(q.status || 'draft').toLowerCase()
-                          const ST_MAP: Record<string, { label: string; cls: string }> = {
-                            draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border border-slate-200' },
-                            sent: { label: 'Enviada', cls: 'bg-blue-100 text-blue-800 border border-blue-200' },
-                            follow_up: { label: 'Seguimiento', cls: 'bg-amber-100 text-amber-800 border border-amber-200' },
-                            reserved: { label: 'Reservada', cls: 'bg-purple-100 text-purple-800 border border-purple-200' },
-                            sold: { label: 'Vendida / Ganada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
-                            confirmed: { label: 'Confirmada', cls: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
-                            lost: { label: 'Perdida', cls: 'bg-red-100 text-red-800 border border-red-200' }
-                          }
-                          const st = ST_MAP[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-emerald-100 text-emerald-800' }
-                          return (
-                            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md ${st.cls}`}>
-                              {st.label}
-                            </span>
-                          )
-                        })()}
-                      </div>
-
-                      <div className="flex justify-between items-center text-xs border-t border-emerald-100 pt-2">
-                        <div>
-                          <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total</p>
-                          <p className="font-bold text-slate-800">${fmtVal(sale)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9.5px] font-bold text-emerald-600 uppercase">Pendiente a Entrar</p>
-                          <p className="font-black text-emerald-700 text-sm">+${fmtVal(pending)}</p>
+                    <div 
+                      key={q.id} 
+                      className="p-4 bg-white hover:bg-slate-50/60 rounded-2xl border border-slate-200/90 hover:border-indigo-300 transition-all shadow-2xs hover:shadow-md hover:-translate-y-0.5 space-y-3.5 flex flex-col justify-between group"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-slate-900 uppercase tracking-tight truncate" title={clientName}>
+                              {clientName}
+                            </p>
+                            <p className="text-[11px] font-semibold text-slate-500 truncate mt-0.5" title={q.title || 'Cotización de Viaje'}>
+                              {q.title || 'Cotización de Viaje'}
+                            </p>
+                          </div>
+                          {(() => {
+                            const stKey = String(q.status || 'draft').toLowerCase()
+                            const ST_MAP: Record<string, { label: string; cls: string }> = {
+                              draft: { label: 'Borrador', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+                              sent: { label: 'Enviada', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+                              follow_up: { label: 'Seguimiento', cls: 'bg-blue-50 text-blue-800 border-blue-200' },
+                              reserved: { label: 'Reservada', cls: 'bg-purple-50 text-purple-800 border-purple-200 font-black' },
+                              sold: { label: 'Vendida / Ganada', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-black' },
+                              confirmed: { label: 'Confirmada', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200 font-black' },
+                              lost: { label: 'Perdida', cls: 'bg-red-50 text-red-800 border-red-200' }
+                            }
+                            const st = ST_MAP[stKey] || { label: String(q.status || 'Borrador').toUpperCase(), cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' }
+                            return (
+                              <span className={`text-[9.5px] font-extrabold uppercase px-2 py-0.5 rounded-lg border shrink-0 ${st.cls}`}>
+                                {st.label}
+                              </span>
+                            )
+                          })()}
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2 pt-1">
+                      <div className="space-y-3 pt-2 border-t border-slate-100">
+                        <div className="flex justify-between items-center text-xs">
+                          <div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Venta Total</p>
+                            <p className="font-bold text-slate-800 text-xs">${fmtVal(sale)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Pendiente a Entrar</p>
+                            <p className="font-black text-emerald-700 text-sm tracking-tight">+${fmtVal(pending)}</p>
+                          </div>
+                        </div>
+
                         <button
                           onClick={() => handleLoadQuote(q)}
-                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase rounded-xl transition-all cursor-pointer shadow-xs"
+                          className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.98] flex items-center justify-center gap-1.5"
                         >
                           Ver Cotización
                         </button>

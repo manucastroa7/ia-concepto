@@ -358,18 +358,18 @@ export const PassengerManager: React.FC = () => {
                     </p>
                 </div>
             ) : viewMode === 'table' ? (
-                /* VISTA ENLISTADA (TABLA COMPACTA) */
-                <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+                /* VISTA ENLISTADA (TABLA DE NIVEL EJECUTIVO) */
+                <div className="app-table-container">
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                        <table className="app-table">
                             <thead>
-                                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[10.5px] font-black uppercase tracking-wider text-slate-400">
-                                    <th className="py-3.5 px-5">Pasajero / Titular</th>
-                                    <th className="py-3.5 px-4">Pasaporte / DNI</th>
-                                    <th className="py-3.5 px-4">Fechas Normalizadas</th>
-                                    <th className="py-3.5 px-4">Contacto (WA / Email)</th>
-                                    <th className="py-3.5 px-4">Observaciones</th>
-                                    <th className="py-3.5 px-5 text-right">Acciones</th>
+                                <tr className="app-table-header h-11">
+                                    <th className="px-4 py-2 font-bold whitespace-nowrap">Pasajero / Titular</th>
+                                    <th className="px-4 py-2 font-bold whitespace-nowrap">Pasaporte / DNI</th>
+                                    <th className="px-4 py-2 font-bold whitespace-nowrap">Fechas Normalizadas</th>
+                                    <th className="px-4 py-2 font-bold whitespace-nowrap">Contacto (WA / Email)</th>
+                                    <th className="px-4 py-2 font-bold whitespace-nowrap">Observaciones</th>
+                                    <th className="px-4 py-2 font-bold text-right whitespace-nowrap">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
@@ -724,26 +724,26 @@ export const PassengerManager: React.FC = () => {
                                 {/* Form Fields Grid */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                                        <label className="app-label">
                                             Nombre <span className="text-orange-500">*</span>
                                         </label>
                                         <input 
                                             required
                                             value={currentPassenger.name || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, name: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="Ej: Juan Carlos"
                                         />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                                        <label className="app-label">
                                             Apellido <span className="text-orange-500">*</span>
                                         </label>
                                         <input 
                                             required
                                             value={currentPassenger.surname || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, surname: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="Ej: Perez Garcia"
                                         />
                                     </div>
@@ -751,25 +751,25 @@ export const PassengerManager: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <CreditCard className="w-3 h-3 text-orange-500" /> Pasaporte / DNI
                                         </label>
                                         <input 
                                             value={currentPassenger.passportNumber || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, passportNumber: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all uppercase"
+                                            className="app-input uppercase"
                                             placeholder="Ej: AAB123456"
                                         />
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <Globe className="w-3 h-3 text-slate-400" /> Nacionalidad
                                         </label>
                                         <input 
                                             value={currentPassenger.nationality || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, nationality: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="Ej: Argentina"
                                         />
                                     </div>
@@ -777,27 +777,27 @@ export const PassengerManager: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <Calendar className="w-3 h-3 text-slate-400" /> Fecha Nacimiento
                                         </label>
                                         <input 
                                             value={currentPassenger.birthDate || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, birthDate: e.target.value})}
                                             onBlur={e => setCurrentPassenger({...currentPassenger, birthDate: normalizeDateString(e.target.value)})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="DD/MM/YYYY"
                                         />
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <Calendar className="w-3 h-3 text-amber-500" /> Expiración Pasaporte
                                         </label>
                                         <input 
                                             value={currentPassenger.passportExpiration || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, passportExpiration: e.target.value})}
                                             onBlur={e => setCurrentPassenger({...currentPassenger, passportExpiration: normalizeDateString(e.target.value)})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="DD/MM/YYYY"
                                         />
                                     </div>
@@ -805,46 +805,46 @@ export const PassengerManager: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <Phone className="w-3 h-3 text-emerald-500" /> WhatsApp
                                         </label>
                                         <input 
                                             value={currentPassenger.whatsapp || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, whatsapp: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all"
+                                            className="app-input"
                                             placeholder="+54 9 11 ..."
                                         />
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                                        <label className="app-label flex items-center gap-1">
                                             <Mail className="w-3 h-3 text-sky-500" /> Email
                                         </label>
                                         <input 
                                             type="email"
                                             value={currentPassenger.email || ''} 
                                             onChange={e => setCurrentPassenger({...currentPassenger, email: e.target.value})}
-                                            className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all lowercase"
+                                            className="app-input lowercase"
                                             placeholder="pasajero@ejemplo.com"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">Observaciones / Preferencias</label>
+                                    <label className="app-label">Observaciones / Preferencias</label>
                                     <textarea 
                                         rows={3}
                                         value={currentPassenger.notes || ''} 
                                         onChange={e => setCurrentPassenger({...currentPassenger, notes: e.target.value})}
-                                        className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all min-h-[80px] resize-none"
+                                        className="app-textarea min-h-[80px] resize-none"
                                         placeholder="Preferencias de asiento, restricción de alimentos, fechas clave..."
                                     />
                                 </div>
                             </div>
 
                             <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer">Cancelar</button>
-                                <button type="submit" className="flex-1 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="app-btn-secondary flex-1">Cancelar</button>
+                                <button type="submit" className="app-btn-primary flex-1">
                                     <Save className="w-4 h-4" /> Confirmar Pasajero
                                 </button>
                             </div>

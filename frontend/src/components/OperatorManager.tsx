@@ -243,24 +243,24 @@ export function OperatorManager() {
         </div>
       ) : viewMode === 'table' ? (
         /* VISTA ENLISTADA (TABLA COMPACTA Y MODERNA) */
-        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+        <div className="app-table-container">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="app-table">
               <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[10.5px] font-black uppercase tracking-wider text-slate-400">
-                  <th className="py-3.5 px-5">Operador / Proveedor</th>
-                  <th className="py-3.5 px-4 text-center">Comisión Master</th>
-                  <th className="py-3.5 px-4">Email Reservas</th>
-                  <th className="py-3.5 px-4">Teléfono / WhatsApp</th>
-                  <th className="py-3.5 px-4">Notas Internas</th>
-                  <th className="py-3.5 px-5 text-right">Acciones</th>
+                <tr className="app-table-header h-11">
+                  <th className="px-4 py-2 font-bold whitespace-nowrap">Operador / Proveedor</th>
+                  <th className="px-4 py-2 font-bold text-center whitespace-nowrap">Comisión Master</th>
+                  <th className="px-4 py-2 font-bold whitespace-nowrap">Email Reservas</th>
+                  <th className="px-4 py-2 font-bold whitespace-nowrap">Teléfono / WhatsApp</th>
+                  <th className="px-4 py-2 font-bold whitespace-nowrap">Notas Internas</th>
+                  <th className="px-4 py-2 font-bold text-right whitespace-nowrap">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                 {paginatedOperators.map((op) => (
-                  <tr key={op.id} className="hover:bg-orange-50/30 transition-colors group">
+                  <tr key={op.id} className="app-table-row">
                     {/* Operator Name */}
-                    <td className="py-3.5 px-5 font-black text-slate-900 uppercase tracking-tight text-sm">
+                    <td className="px-4 py-2 align-middle whitespace-nowrap font-black text-slate-900 uppercase tracking-tight text-xs">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-orange-500 shrink-0 opacity-80" />
                         <span>{op.name}</span>
@@ -268,10 +268,10 @@ export function OperatorManager() {
                     </td>
 
                     {/* Commission */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="px-4 py-2 align-middle text-center whitespace-nowrap">
                       {op.defaultCommissionPercentage !== null && op.defaultCommissionPercentage !== undefined ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-black text-orange-600 bg-orange-50 px-2.5 py-1 rounded-md border border-orange-100">
-                          <Percent className="w-3 h-3" /> {op.defaultCommissionPercentage}%
+                        <span className="app-badge-orange">
+                          <Percent className="w-3 h-3 mr-0.5" /> {op.defaultCommissionPercentage}%
                         </span>
                       ) : (
                         <span className="text-slate-300 font-normal">-</span>
@@ -279,7 +279,7 @@ export function OperatorManager() {
                     </td>
 
                     {/* Email */}
-                    <td className="py-3.5 px-4">
+                    <td className="px-4 py-2 align-middle whitespace-nowrap">
                       {op.contactEmail ? (
                         <div className="flex items-center gap-2">
                           <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -300,7 +300,7 @@ export function OperatorManager() {
                     </td>
 
                     {/* WhatsApp / Phone */}
-                    <td className="py-3.5 px-4">
+                    <td className="px-4 py-2 align-middle whitespace-nowrap">
                       {op.contactPhone ? (
                         <div className="flex items-center gap-2">
                           <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -321,7 +321,7 @@ export function OperatorManager() {
                     </td>
 
                     {/* Notes */}
-                    <td className="py-3.5 px-4 max-w-xs">
+                    <td className="px-4 py-2 align-middle max-w-xs">
                       {op.internalNotes ? (
                         <p className="truncate text-slate-500 text-[11px] font-normal" title={op.internalNotes}>
                           {op.internalNotes}
@@ -332,7 +332,7 @@ export function OperatorManager() {
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-5 text-right">
+                    <td className="px-4 py-2 align-middle text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
                         <button 
                           onClick={() => handleEdit(op)}
@@ -560,21 +560,21 @@ export function OperatorManager() {
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                <label className="app-label">
                   Razón Social / Nombre Comercial <span className="text-orange-500">*</span>
                 </label>
                 <input 
                   required 
                   value={formData.name} 
                   onChange={e => setFormData({...formData, name: e.target.value})} 
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all" 
+                  className="app-input" 
                   placeholder="Ej: Almundo, Julia Tours, Catai, Action Travel..." 
                 />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                  <label className="app-label">
                     Comisión Master (%)
                   </label>
                   <div className="relative">
@@ -583,7 +583,7 @@ export function OperatorManager() {
                       step="0.1" 
                       value={formData.defaultCommissionPercentage} 
                       onChange={e => setFormData({...formData, defaultCommissionPercentage: e.target.value})} 
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all pr-8" 
+                      className="app-input pr-8" 
                       placeholder="12.0" 
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
@@ -591,39 +591,39 @@ export function OperatorManager() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                  <label className="app-label">
                     Teléfono / WhatsApp
                   </label>
                   <input 
                     value={formData.contactPhone} 
                     onChange={e => setFormData({...formData, contactPhone: e.target.value})} 
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all" 
+                    className="app-input" 
                     placeholder="+54 9 11 1234 5678" 
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                <label className="app-label">
                   Casilla de Email / Reservas
                 </label>
                 <input 
                   type="email" 
                   value={formData.contactEmail} 
                   onChange={e => setFormData({...formData, contactEmail: e.target.value})} 
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all lowercase" 
+                  className="app-input lowercase" 
                   placeholder="reservas@operador.com" 
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                <label className="app-label">
                   Notas Internas / Operativa
                 </label>
                 <textarea 
                   value={formData.internalNotes} 
                   onChange={e => setFormData({...formData, internalNotes: e.target.value})} 
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:bg-white rounded-xl px-4 py-2.5 text-xs text-slate-800 font-semibold outline-none transition-all min-h-[90px] resize-none" 
+                  className="app-textarea min-h-[90px] resize-none" 
                   placeholder="Días de pago, ejecutivos asignados, condiciones particulares..." 
                 />
               </div>
@@ -632,13 +632,13 @@ export function OperatorManager() {
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="app-btn-secondary flex-1"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
-                  className="flex-1 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="app-btn-primary flex-1"
                 >
                   <Save className="w-4 h-4" /> Guardar Proveedor
                 </button>
