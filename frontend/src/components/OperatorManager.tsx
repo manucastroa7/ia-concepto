@@ -535,9 +535,9 @@ export function OperatorManager() {
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
             onClick={() => setIsModalOpen(false)} 
           />
-          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-5xl h-[88vh] max-h-[88vh] bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200 flex flex-col">
             {/* Modal Header */}
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold">
                   <Building2 className="w-5 h-5" />
@@ -558,77 +558,79 @@ export function OperatorManager() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="space-y-1.5">
-                <label className="app-label">
-                  Razón Social / Nombre Comercial <span className="text-orange-500">*</span>
-                </label>
-                <input 
-                  required 
-                  value={formData.name} 
-                  onChange={e => setFormData({...formData, name: e.target.value})} 
-                  className="app-input" 
-                  placeholder="Ej: Almundo, Julia Tours, Catai, Action Travel..." 
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="flex flex-col h-full overflow-hidden flex-1">
+              <div className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
                 <div className="space-y-1.5">
                   <label className="app-label">
-                    Comisión Master (%)
+                    Razón Social / Nombre Comercial <span className="text-orange-500">*</span>
                   </label>
-                  <div className="relative">
+                  <input 
+                    required 
+                    value={formData.name} 
+                    onChange={e => setFormData({...formData, name: e.target.value})} 
+                    className="app-input" 
+                    placeholder="Ej: Almundo, Julia Tours, Catai, Action Travel..." 
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="app-label">
+                      Comisión Master (%)
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        step="0.1" 
+                        value={formData.defaultCommissionPercentage} 
+                        onChange={e => setFormData({...formData, defaultCommissionPercentage: e.target.value})} 
+                        className="app-input pr-8" 
+                        placeholder="12.0" 
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="app-label">
+                      Teléfono / WhatsApp
+                    </label>
                     <input 
-                      type="number" 
-                      step="0.1" 
-                      value={formData.defaultCommissionPercentage} 
-                      onChange={e => setFormData({...formData, defaultCommissionPercentage: e.target.value})} 
-                      className="app-input pr-8" 
-                      placeholder="12.0" 
+                      value={formData.contactPhone} 
+                      onChange={e => setFormData({...formData, contactPhone: e.target.value})} 
+                      className="app-input" 
+                      placeholder="+54 9 11 1234 5678" 
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="app-label">
-                    Teléfono / WhatsApp
+                    Casilla de Email / Reservas
                   </label>
                   <input 
-                    value={formData.contactPhone} 
-                    onChange={e => setFormData({...formData, contactPhone: e.target.value})} 
-                    className="app-input" 
-                    placeholder="+54 9 11 1234 5678" 
+                    type="email" 
+                    value={formData.contactEmail} 
+                    onChange={e => setFormData({...formData, contactEmail: e.target.value})} 
+                    className="app-input lowercase" 
+                    placeholder="reservas@operador.com" 
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="app-label">
+                    Notas Internas / Operativa
+                  </label>
+                  <textarea 
+                    value={formData.internalNotes} 
+                    onChange={e => setFormData({...formData, internalNotes: e.target.value})} 
+                    className="app-textarea min-h-[90px] resize-none" 
+                    placeholder="Días de pago, ejecutivos asignados, condiciones particulares..." 
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="app-label">
-                  Casilla de Email / Reservas
-                </label>
-                <input 
-                  type="email" 
-                  value={formData.contactEmail} 
-                  onChange={e => setFormData({...formData, contactEmail: e.target.value})} 
-                  className="app-input lowercase" 
-                  placeholder="reservas@operador.com" 
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="app-label">
-                  Notas Internas / Operativa
-                </label>
-                <textarea 
-                  value={formData.internalNotes} 
-                  onChange={e => setFormData({...formData, internalNotes: e.target.value})} 
-                  className="app-textarea min-h-[90px] resize-none" 
-                  placeholder="Días de pago, ejecutivos asignados, condiciones particulares..." 
-                />
-              </div>
-
-              <div className="pt-3 flex gap-3">
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shrink-0">
                 <button 
                   type="button"
                   onClick={() => setIsModalOpen(false)}

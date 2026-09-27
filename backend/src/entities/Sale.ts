@@ -6,7 +6,7 @@ export class Sale {
     @PrimaryGeneratedColumn("uuid")
     id!: string;
 
-    @OneToOne(() => ManualQuote, { nullable: true })
+    @OneToOne(() => ManualQuote, { nullable: true, onDelete: "SET NULL" })
     @JoinColumn()
     quote?: ManualQuote;
 

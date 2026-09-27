@@ -659,10 +659,10 @@ export const PassengerManager: React.FC = () => {
             {isModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" onClick={() => setIsModalOpen(false)} />
-                    <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200">
-                        <form onSubmit={handleSave}>
+                    <div className="relative w-full max-w-5xl h-[88vh] max-h-[88vh] bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200 flex flex-col">
+                        <form onSubmit={handleSave} className="flex flex-col h-full overflow-hidden">
                             {/* Modal Header */}
-                            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold">
                                         <Users className="w-5 h-5" />
@@ -679,7 +679,7 @@ export const PassengerManager: React.FC = () => {
                                 </button>
                             </div>
 
-                            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                            <div className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
                                 {/* PASSPORT AI OCR DROPZONE BANNER */}
                                 <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 border-2 border-dashed border-orange-500/40 rounded-2xl p-4 text-center transition-all hover:bg-orange-500/15">
                                     <input 
@@ -842,7 +842,7 @@ export const PassengerManager: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shrink-0">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="app-btn-secondary flex-1">Cancelar</button>
                                 <button type="submit" className="app-btn-primary flex-1">
                                     <Save className="w-4 h-4" /> Confirmar Pasajero

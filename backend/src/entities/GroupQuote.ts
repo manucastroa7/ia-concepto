@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn, DeleteDateColumn } from "typeorm";
 
 @Entity()
 export class GroupQuote {
@@ -85,4 +85,7 @@ export class GroupQuote {
 
     @UpdateDateColumn()
     updatedAt!: Date;
+
+    @DeleteDateColumn({ nullable: true })
+    deletedAt?: Date;
 }

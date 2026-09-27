@@ -123,10 +123,10 @@ export const PassengerProfileModal: React.FC<PassengerProfileModalProps> = ({ pa
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" onClick={onClose} />
 
-            <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="relative w-full max-w-5xl h-[88vh] max-h-[88vh] bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/80 animate-in zoom-in-95 duration-200 flex flex-col">
                 
                 {/* MODAL HEADER */}
-                <div className="px-6 py-6 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="px-6 py-6 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
                     <div className="flex items-center gap-4">
                         <div className="w-14 h-14 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20 text-white shrink-0">
                             <Users className="w-7 h-7" />
@@ -174,7 +174,7 @@ export const PassengerProfileModal: React.FC<PassengerProfileModalProps> = ({ pa
                 </div>
 
                 {/* TABS SELECTOR */}
-                <div className="flex border-b border-slate-200/80 bg-white px-6">
+                <div className="flex border-b border-slate-200/80 bg-white px-6 shrink-0">
                     <button
                         onClick={() => setActiveTab('services')}
                         className={`flex items-center gap-2 py-3.5 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
@@ -464,7 +464,7 @@ export const PassengerProfileModal: React.FC<PassengerProfileModalProps> = ({ pa
                 </div>
 
                 {/* MODAL FOOTER */}
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
                     <button
                         onClick={onClose}
                         className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"

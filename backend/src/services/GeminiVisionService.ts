@@ -393,15 +393,36 @@ FORMATO JSON DE SALIDA OBLIGATORIO:
   "startDate": "Fecha de inicio de vigencia DD/MM/YYYY (ej: 20/07/2026)",
   "endDate": "Fecha de fin de vigencia DD/MM/YYYY (ej: 05/08/2026)",
   "documentNumber": "Número de documento de viaje, DNI o Pasaporte del asegurado (ej: 53583426)",
-  "price": 694.77,
-  "baseNetCost": 606.32,
-  "commissionValue": 88.46,
+  "hotelName": "Nombre del hotel si figura (ej: Hotel MS Maestranza)",
+  "roomType": "Tipo de habitación exacto (ej: Double Classic Room, Doble Standard, Suite)",
+  "board": "Régimen de comidas / suplementos exacto que figura en el comprobante: 'Solo Habitación' (si dice 'Room Only', 'Solo Habitación', 'Sin Desayuno', 'EP', 'Bed Only'), 'Desayuno Buffet' (si dice 'Bed & Breakfast', 'BB', 'Desayuno Included', 'Con Desayuno'), 'Media Pensión' (si dice 'Half Board', 'HB'), 'Pensión Completa' (si dice 'Full Board', 'FB'), 'All Inclusive' (si dice 'All Inclusive', 'AI', 'Todo Incluido')",
+  "paxCount": "Número entero de adultos / pasajeros (ej: 2 si dice '2 Adultos')",
+  "excursionName": "Nombre completo de la excursión o tour (ej: Excursión a Nerja, Frigiliana y El Acebuchal en grupo reducido)",
+  "duration": "Duración del tour/excursión (ej: 7 hs)",
+  "language": "Idioma del tour (ej: Tour en español / Guía en español)",
+  "inclusions": "Detalle de lo que incluye el tour (ej: Transporte en minibús, Guía en español, Grupo reducido máx 7 personas)",
+  "exclusions": "Detalle de lo que NO incluye (ej: Comidas y bebidas)",
+  "deadline": "Fecha de vencimiento, límite de pago o cancelación DD/MM/YYYY (ej: 25/09/2026)",
+  "price": 227.08,
+  "baseNetCost": 227.08,
+  "commissionValue": 0,
   "currency": "EUR" | "USD" | "ARS",
-  "description": "Cualquier nota adicional relevante (ej: Tarifas de reserva - Precio al pasajero: USD 694,77)"
+  "description": "Cualquier nota adicional relevante o resumen completo de la excursión"
 }
 
 REGLAS STRICTAS:
-- Extrae con la mayor exactitud posible los nombres de lugares, fechas, horas y códigos de confirmación.
+- Extrae con la mayor exactitud posible los nombres de lugares, fechas, horas, régimen de comidas y códigos de confirmación.
+- Para EXCURSIONES / TOURS (ej: ebooking, Civitatis, Viator, etc.):
+  * "excursionName": Extrae el título exacto del tour (ej: "Excursión a Nerja, Frigiliana y El Acebuchal en grupo reducido").
+  * "confirmationNumber": Extrae el 'Localizador' o código de reserva (ej: "3156169").
+  * "deadline": Extrae 'Fecha de vencimiento' o límite (ej: "25/09/2026").
+  * "departureDate" / "date": Extrae 'Inicio del servicio' (ej: "08/10/2026").
+  * "departureTime" / "time": Extrae 'Hora de salida' (ej: "10:00").
+  * "price": Extrae el precio total (ej: 227.08).
+  * "currency": Extrae la moneda (ej: "USD").
+  * "inclusions": Extrae el texto de 'Incluye' (ej: "Transporte en minibús. Guía en español. Grupo reducido de máximo 7 personas.").
+  * "exclusions": Extrae el texto de 'No incluye' (ej: "Comidas y bebidas.").
+- Para "board" (Régimen de comidas): Si figura "Room Only", "Solo Habitación" o "Sin Desayuno", debes asignarle estrictamente "Solo Habitación". Si figura "Bed & Breakfast", "Desayuno", debes asignarle "Desayuno Buffet".
 - Si la imagen contiene un desglose de liquidación / tarifa de reserva de mayorista:
   * "price": Extrae 'Precio de venta al pasajero' o 'Precio de venta reserva' (ej: 694.77).
   * "baseNetCost": Extrae 'Neto a pagar de agencia' (ej: 606.32).

@@ -18,16 +18,32 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-export const AppDataSource = new DataSource({
-    type: "postgres",
-    host: process.env.DB_HOST || "localhost",
-    port: parseInt(process.env.DB_PORT || "5432"),
-    username: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASSWORD || "Riverplate912",
-    database: process.env.DB_NAME || "travel_agency",
-    synchronize: true,
-    logging: false,
-    entities: [Quote, FlyerDoc, Circuit, GroupDeparture, DestinationAsset, AgencySettings, ManualQuote, Sale, Operator, Passenger, WebPackage, GroupQuote, TreasuryAccount, TreasuryTransaction],
-    migrations: ["src/migrations/**/*.ts"],
-    subscribers: [],
-});
+const databaseUrl = process.env.DATABASE_URL;
+
+export const AppDataSource = new DataSource(
+    databaseUrl
+        ? {
+              type: "postgres",
+              url: databaseUrl,
+              synchronize: true,
+              logging: false,
+              ssl: process.env.DB_SSL === "false" ? false : { rejectUnauthorized: false },
+              entities: [Quote, FlyerDoc, Circuit, GroupDeparture, DestinationAsset, AgencySettings, ManualQuote, Sale, Operator, Passenger, WebPackage, GroupQuote, TreasuryAccount, TreasuryTransaction],
+              migrations: ["src/migrations/**/*.ts"],
+              subscribers: [],
+          }
+        : {
+              type: "postgres",
+              host: process.env.DB_HOST || "localhost",
+              port: parseInt(process.env.DB_PORT || "5432"),
+              username: process.env.DB_USER || "postgres",
+              password: process.env.DB_PASSWORD || "Riverplate912",
+              database: process.env.DB_NAME || "concepto_bdd",
+              synchronize: true,
+              logging: false,
+              ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
+              entities: [Quote, FlyerDoc, Circuit, GroupDeparture, DestinationAsset, AgencySettings, ManualQuote, Sale, Operator, Passenger, WebPackage, GroupQuote, TreasuryAccount, TreasuryTransaction],
+              migrations: ["src/migrations/**/*.ts"],
+              subscribers: [],
+          }
+);

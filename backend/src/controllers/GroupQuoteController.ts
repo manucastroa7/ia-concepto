@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source";
 import { GroupQuote } from "../entities/GroupQuote";
+import { Not, IsNull } from "typeorm";
 
 const numberOrZero = (value: unknown) => {
     const parsed = Number(value);
@@ -156,11 +157,48 @@ export class GroupQuoteController {
     static async remove(req: Request, res: Response) {
         try {
             const repo = AppDataSource.getRepository(GroupQuote);
-            await repo.delete(req.params.id);
-            return res.json({ ok: true });
+            await repo.softDelete(req.params.id);
+            return res.json({ ok: true, message: "Cotización grupal movida a la papelera" });
         } catch (error) {
             console.error("Error deleting group quote:", error);
             return res.status(500).json({ message: "Error al eliminar cotizacion grupal" });
+        }
+    }
+
+    static async listTrash(req: Request, res: Response) {
+        try {
+            const repo = AppDataSource.getRepository(GroupQuote);
+            const quotes = await repo.find({
+                withDeleted: true,
+                where: { deletedAt: Not(IsNull()) },
+                order: { createdAt: "DESC" }
+            });
+            return res.json(quotes);
+        } catch (error) {
+            console.error("Error listing trash group quotes:", error);
+            return res.status(500).json({ message: "Error al listar la papelera de cotizaciones grupales" });
+        }
+    }
+
+    static async restore(req: Request, res: Response) {
+        try {
+            const repo = AppDataSource.getRepository(GroupQuote);
+            await repo.restore(req.params.id);
+            return res.json({ ok: true, message: "Cotización grupal restaurada exitosamente" });
+        } catch (error) {
+            console.error("Error restoring group quote:", error);
+            return res.status(500).json({ message: "Error al restaurar cotización grupal" });
+        }
+    }
+
+    static async removePermanent(req: Request, res: Response) {
+        try {
+            const repo = AppDataSource.getRepository(GroupQuote);
+            await repo.delete(req.params.id);
+            return res.json({ ok: true, message: "Cotización grupal eliminada permanentemente" });
+        } catch (error) {
+            console.error("Error permanently deleting group quote:", error);
+            return res.status(500).json({ message: "Error al eliminar permanentemente cotización grupal" });
         }
     }
 

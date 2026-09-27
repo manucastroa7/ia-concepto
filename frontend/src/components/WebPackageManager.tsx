@@ -246,22 +246,22 @@ export function WebPackageManager() {
 
       {/* ─── FORM MODAL ─────────────────────────────────────────── */}
       {showForm && (
-        <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto py-8 px-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl h-[88vh] max-h-[88vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-8 border-b border-slate-100">
+            <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 shrink-0">
               <div>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight">
                   {isEditing ? 'Editar Paquete' : 'Nuevo Paquete Web'}
                 </h2>
                 <p className="text-sm text-slate-400 mt-0.5">Se publicará en la sección Vidriera de concepto-web</p>
               </div>
-              <button onClick={() => setShowForm(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-all">
+              <button onClick={() => setShowForm(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-all cursor-pointer">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-8 space-y-8">
+            <div className="p-6 sm:p-8 space-y-8 flex-1 overflow-y-auto custom-scrollbar">
               {/* ── Información Base ── */}
               <section>
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Información Base</h3>
@@ -563,7 +563,7 @@ export function WebPackageManager() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 p-8 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-3 p-6 sm:p-8 border-t border-slate-100 shrink-0 bg-slate-50/50">
               <button onClick={() => setShowForm(false)} className="px-5 py-3 rounded-xl text-sm font-black text-slate-500 hover:bg-slate-100 transition-all">
                 Cancelar
               </button>

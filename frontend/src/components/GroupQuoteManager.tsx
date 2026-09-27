@@ -4,7 +4,7 @@ import {
     ChevronDown, CheckCircle2, X, Briefcase, Clock, Calendar, MapPin, DollarSign, 
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
-    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy, Bus, Compass, Utensils, Award, MessageSquare, Calculator
+    AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy, Bus, Compass, Utensils, Award, MessageSquare, Calculator, RotateCcw
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -166,9 +166,13 @@ const fmtDate = (d?: string) => {
 }
 
 export function GroupQuoteManager() {
-  const [viewMode, setViewMode] = useState<'builder' | 'list'>('builder')
+  const [viewMode, setViewMode] = useState<'builder' | 'list' | 'trash'>('builder')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'confirmed' | 'lost'>('all')
+  const [trashQuotes, setTrashQuotes] = useState<any[]>([])
+  const [groupQuoteToDelete, setGroupQuoteToDelete] = useState<any | null>(null)
+  const [groupQuoteToRestore, setGroupQuoteToRestore] = useState<any | null>(null)
+  const [groupQuoteToPermanentDelete, setGroupQuoteToPermanentDelete] = useState<any | null>(null)
 
   const [quote, setQuote] = useState<GroupQuoteState>({
     quoteNumber: '',
@@ -211,6 +215,7 @@ export function GroupQuoteManager() {
   useEffect(() => {
     fetchOperators()
     fetchHistory()
+    fetchTrash()
   }, [])
 
   // Autoguardado debounced (1.5s)
@@ -264,6 +269,56 @@ export function GroupQuoteManager() {
       setHistoryQuotes(Array.isArray(res.data) ? res.data : [])
     } catch {
       setHistoryQuotes([])
+    }
+  }
+
+  const fetchTrash = async () => {
+    try {
+      const res = await axios.get('/api/group-quotes/trash')
+      setTrashQuotes(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setTrashQuotes([])
+    }
+  }
+
+  const handleDeleteGroupQuote = async (id: string) => {
+    if (!id) return
+    try {
+      await axios.delete(`/api/group-quotes/${id}`)
+      toast.success('Cotización grupal movida a la Papelera de Reciclaje')
+      fetchHistory()
+      fetchTrash()
+    } catch (e: any) {
+      toast.error('Error al eliminar cotización grupal')
+    } finally {
+      setGroupQuoteToDelete(null)
+    }
+  }
+
+  const handleRestoreGroupQuote = async (id: string) => {
+    if (!id) return
+    try {
+      await axios.post(`/api/group-quotes/${id}/restore`)
+      toast.success('Cotización grupal restaurada exitosamente')
+      fetchHistory()
+      fetchTrash()
+    } catch (e: any) {
+      toast.error('Error al restaurar cotización grupal')
+    } finally {
+      setGroupQuoteToRestore(null)
+    }
+  }
+
+  const handlePermanentDeleteGroupQuote = async (id: string) => {
+    if (!id) return
+    try {
+      await axios.delete(`/api/group-quotes/${id}/permanent`)
+      toast.success('Cotización grupal eliminada definitivamente')
+      fetchTrash()
+    } catch (e: any) {
+      toast.error('Error al eliminar permanentemente')
+    } finally {
+      setGroupQuoteToPermanentDelete(null)
     }
   }
 
@@ -572,20 +627,80 @@ export function GroupQuoteManager() {
               const updatedDetails = { ...it.details }
               const updatedEconomics = { ...it.economics }
 
+              const formatInputDate = (dStr?: string) => {
+                if (!dStr || typeof dStr !== 'string') return undefined
+                const str = dStr.trim()
+                if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+
+                const numMatch = str.match(/(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})/)
+                if (numMatch) {
+                  const d = numMatch[1].padStart(2, '0')
+                  const m = numMatch[2].padStart(2, '0')
+                  let y = numMatch[3]
+                  if (y.length === 2) y = `20${y}`
+                  return `${y}-${m}-${d}`
+                }
+                return undefined
+              }
+
+              const excTitle = parsed.excursionName || parsed.title
+              if (excTitle) {
+                updatedDetails.serviceName = excTitle
+              }
+
               if (parsed.hotelName) updatedDetails.hotelName = parsed.hotelName
               if (parsed.origin) updatedDetails.origin = parsed.origin
-              if (parsed.destination) updatedDetails.destination = parsed.destination
+              if (parsed.destination || parsed.city) updatedDetails.destination = parsed.destination || parsed.city
+
               if (parsed.confirmationNumber || parsed.bookingCode) {
                 const c = parsed.confirmationNumber || parsed.bookingCode
                 updatedDetails.confirmationNumber = c
                 updatedDetails.bookingCode = c
               }
-              if (parsed.checkIn) updatedDetails.checkIn = parsed.checkIn
-              if (parsed.checkOut) updatedDetails.checkOut = parsed.checkOut
-              if (parsed.description) updatedDetails.description = parsed.description
+
+              const timeVal = parsed.departureTime || parsed.time
+              if (timeVal) {
+                updatedDetails.time = timeVal
+                updatedDetails.departureTime = timeVal
+              }
+
+              const dateVal = formatInputDate(parsed.departureDate || parsed.date || parsed.checkIn || parsed.startDate)
+              if (dateVal) {
+                updatedDetails.date = dateVal
+                updatedDetails.startDate = dateVal
+                updatedDetails.departureDate = dateVal
+                updatedDetails.checkIn = dateVal
+              }
+              if (parsed.checkOut) updatedDetails.checkOut = formatInputDate(parsed.checkOut)
+              if (parsed.deadline) updatedDetails.cancellationDate = formatInputDate(parsed.deadline)
+
+              const notesParts: string[] = []
+              if (parsed.duration) notesParts.push(`Duración: ${parsed.duration}`)
+              if (parsed.language) notesParts.push(`Idioma: ${parsed.language}`)
+              if (parsed.inclusions) {
+                const incStr = Array.isArray(parsed.inclusions) ? parsed.inclusions.join(', ') : parsed.inclusions
+                notesParts.push(`Incluye: ${incStr}`)
+              }
+              if (parsed.exclusions) {
+                const excStr = Array.isArray(parsed.exclusions) ? parsed.exclusions.join(', ') : parsed.exclusions
+                notesParts.push(`No incluye: ${excStr}`)
+              }
+              if (parsed.description && !notesParts.includes(parsed.description)) notesParts.push(parsed.description)
+
+              if (notesParts.length > 0) {
+                updatedDetails.description = notesParts.join(' | ')
+              } else if (parsed.description) {
+                updatedDetails.description = parsed.description
+              }
+
               if (parsed.price && typeof parsed.price === 'number') updatedEconomics.baseNetCost = parsed.price
 
-              return { ...it, details: updatedDetails, economics: updatedEconomics }
+              return {
+                ...it,
+                title: excTitle || it.title,
+                details: updatedDetails,
+                economics: updatedEconomics
+              }
             }
             return it
           })
@@ -840,6 +955,14 @@ export function GroupQuoteManager() {
           >
             <Plus className="w-4 h-4" /> {quote.id ? 'Editando Cotización Grupal' : 'Nueva Cotización Grupal'}
           </button>
+          <button
+            onClick={() => { fetchTrash(); setViewMode('trash'); }}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+              viewMode === 'trash' ? 'bg-red-50 text-red-600 shadow-sm border border-red-200 font-black' : 'text-slate-400 hover:text-red-600'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-red-500" /> Papelera ({trashQuotes.length})
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -948,14 +1071,105 @@ export function GroupQuoteManager() {
                     <p className="text-[9.5px] font-bold text-slate-400 uppercase">Precio por Pax Pagante</p>
                     <p className="font-black text-orange-600 text-base leading-tight">{q.currency || 'USD'} ${fmtVal(q.totalPerPerson || 0)}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total Grupo</p>
-                    <p className="font-black text-slate-900 text-xs">{q.currency || 'USD'} ${fmtVal(q.totalSelling || 0)}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-[9.5px] font-bold text-slate-400 uppercase">Venta Total Grupo</p>
+                      <p className="font-black text-slate-900 text-xs">{q.currency || 'USD'} ${fmtVal(q.totalSelling || 0)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setGroupQuoteToDelete(q)
+                      }}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                      title="Mover a Papelera"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
+        </div>
+      ) : viewMode === 'trash' ? (
+        /* VISTA PAPELERA DE RECICLAJE DE GRUPOS */
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Papelera de Reciclaje de Grupos</h2>
+                <p className="text-xs text-slate-500 font-medium">Cotizaciones grupales eliminadas. Podés restaurarlas al historial o eliminarlas permanentemente.</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchTrash}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <RefreshCw className="w-4 h-4" /> Actualizar Papelera
+            </button>
+          </div>
+
+          {trashQuotes.length === 0 ? (
+            <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50 space-y-3">
+              <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 mx-auto">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-black text-slate-700 uppercase">La papelera de grupos está vacía</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">No tenés cotizaciones grupales eliminadas en este momento.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {trashQuotes.map(q => {
+                const deletedDateStr = q.deletedAt ? new Date(q.deletedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+                return (
+                  <div key={q.id} className="p-5 bg-white rounded-2xl border border-red-200/80 shadow-2xs space-y-4 flex flex-col justify-between hover:border-red-300 transition-all">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{q.quoteNumber || 'REF: GRUPO'}</span>
+                          <h3 className="font-black text-slate-900 text-base uppercase tracking-tight truncate mt-0.5" title={q.groupName || q.clientName || 'Grupo sin nombre'}>
+                            {q.groupName || q.clientName || 'Grupo sin nombre'}
+                          </h3>
+                        </div>
+                        <span className="text-[9.5px] font-black uppercase px-2 py-0.5 bg-red-100 text-red-700 rounded-lg border border-red-200 shrink-0">
+                          En Papelera
+                        </span>
+                      </div>
+
+                      <div className="text-xs space-y-1 pt-2 border-t border-slate-100">
+                        <p className="text-slate-500 font-medium">Destino: <strong className="text-slate-800">{q.destination || 'Por definir'}</strong> ({q.pax || 0} Pax)</p>
+                        <p className="text-slate-500 font-medium">Venta Total: <strong className="text-slate-900 font-black">{q.currency || 'USD'} ${fmtVal(q.totalSelling || 0)}</strong></p>
+                        {deletedDateStr && (
+                          <p className="text-[11px] text-red-600 font-bold pt-1">Eliminada: {deletedDateStr}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        onClick={() => setGroupQuoteToRestore(q)}
+                        className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-2xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Restaurar
+                      </button>
+                      <button
+                        onClick={() => setGroupQuoteToPermanentDelete(q)}
+                        className="py-2 px-3 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs uppercase tracking-wider rounded-xl border border-red-200 cursor-pointer transition-all flex items-center justify-center gap-1"
+                        title="Eliminar permanentemente de la base de datos"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       ) : (
         /* VISTA EDITOR COTIZADOR DE GRUPOS */
@@ -1172,12 +1386,13 @@ export function GroupQuoteManager() {
                                item.type === 'assistance' ? <ShieldCheck className="w-5 h-5" /> : <Compass className="w-5 h-5" />}
                             </div>
                             <div>
-                              <h4 className="text-sm font-black text-slate-900 uppercase">
-                                {item.type === 'flight' ? (item.details.airline || 'Aéreo Grupal') :
-                                 item.type === 'hotel' ? (item.details.hotelName || 'Alojamiento Grupal') :
-                                 item.type === 'transfer' ? `Traslado: ${item.details.origin || 'Origen'} ➔ ${item.details.destination || 'Destino'}` :
-                                 (item.details.description || item.type.toUpperCase())}
-                              </h4>
+                               <h4 className="text-sm font-black text-slate-900 uppercase">
+                                 {item.type === 'flight' ? (item.details.airline || 'Aéreo Grupal') :
+                                  item.type === 'hotel' ? (item.details.hotelName || 'Alojamiento Grupal') :
+                                  item.type === 'transfer' ? `Traslado: ${item.details.origin || 'Origen'} ➔ ${item.details.destination || 'Destino'}` :
+                                  item.type === 'assistance' ? (item.details.assistanceCompany ? `Asistencia: ${item.details.assistanceCompany}` : 'Asistencia Médica') :
+                                  (item.title || item.details.serviceName || (item.details.description ? item.details.description.split('|')[0].trim() : 'Excursión / Servicio'))}
+                               </h4>
                               <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
                                 Proveedor: <strong className="text-slate-800">{provider ? provider.name : 'Sin asignar'}</strong> · Liberados: <strong className="text-orange-600">{eco.itemLiberados} Pax</strong> ({eco.itemPaidPax} Pagantes)
                               </p>
@@ -1594,6 +1809,147 @@ export function GroupQuoteManager() {
 
           </div>
 
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN ENVIAR A PAPELERA GRUPO */}
+      {groupQuoteToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-600" /> Mover a Papelera
+              </h3>
+              <button onClick={() => setGroupQuoteToDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 font-medium">
+                ¿Deseás mover esta cotización grupal a la Papelera de Reciclaje? Podrás verla y restaurarla en cualquier momento.
+              </p>
+
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {groupQuoteToDelete.groupName || groupQuoteToDelete.clientName || 'Grupo sin nombre'}
+                </p>
+                <p className="text-xs text-slate-500 font-medium">
+                  Destino: {groupQuoteToDelete.destination || 'Por definir'} · {groupQuoteToDelete.pax || 0} Pax
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupQuoteToDelete(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteGroupQuote(groupQuoteToDelete.id)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> Mover a Papelera
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN RESTAURAR GRUPO */}
+      {groupQuoteToRestore && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-emerald-600" /> Restaurar Cotización Grupal
+              </h3>
+              <button onClick={() => setGroupQuoteToRestore(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 font-medium">
+                ¿Deseás restaurar esta cotización grupal? Volverá a aparecer en tu Historial de Grupos.
+              </p>
+
+              <div className="p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {groupQuoteToRestore.groupName || groupQuoteToRestore.clientName || 'Grupo sin nombre'}
+                </p>
+                <p className="text-xs text-slate-500 font-medium">
+                  Destino: {groupQuoteToRestore.destination || 'Por definir'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupQuoteToRestore(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRestoreGroupQuote(groupQuoteToRestore.id)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" /> Restaurar Cotización
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN BORRADO PERMANENTE GRUPO */}
+      {groupQuoteToPermanentDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2 text-red-600">
+                <AlertTriangle className="w-5 h-5 text-red-600" /> Eliminar Definitivamente
+              </h3>
+              <button onClick={() => setGroupQuoteToPermanentDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-red-600 font-bold">
+                ⚠️ ¡Atención! Esta acción eliminará permanentemente la cotización grupal de la base de datos y no se podrá recuperar.
+              </p>
+
+              <div className="p-3.5 bg-red-50 rounded-2xl border border-red-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {groupQuoteToPermanentDelete.groupName || groupQuoteToPermanentDelete.clientName || 'Grupo sin nombre'}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupQuoteToPermanentDelete(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePermanentDeleteGroupQuote(groupQuoteToPermanentDelete.id)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

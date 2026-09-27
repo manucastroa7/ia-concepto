@@ -5,7 +5,7 @@ import {
     Wallet, FileText, XCircle, ArrowRight, Eye, Train, Upload, Camera, Sparkles, User, UserPlus,
     Luggage, ArrowRightLeft, GripVertical, Building2, CreditCard, ArrowUpDown, Tag, Receipt, Clipboard, RefreshCw,
     AlertTriangle, CalendarDays, Printer, Share2, Download, LayoutDashboard, Copy,
-    List, Table, Layers
+    List, Table, Layers, RotateCcw, Compass
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -109,6 +109,27 @@ const calculateNights = (checkIn?: string, checkOut?: string): number => {
   const diffTime = d2.getTime() - d1.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
   return diffDays > 0 ? diffDays : 0
+}
+
+const normalizeBoardBasis = (boardRaw?: string): string => {
+  if (!boardRaw || typeof boardRaw !== 'string') return 'Solo Habitación'
+  const clean = boardRaw.toLowerCase().trim()
+  if (clean.includes('room only') || clean.includes('solo hab') || clean.includes('ep') || clean.includes('sin des') || clean.includes('bed only')) {
+    return 'Solo Habitación'
+  }
+  if (clean.includes('all inc') || clean.includes('todo inc') || clean.includes('ai')) {
+    return 'All Inclusive'
+  }
+  if (clean.includes('media pen') || clean.includes('half board') || clean.includes('hb') || clean.includes('map')) {
+    return 'Media Pensión'
+  }
+  if (clean.includes('pension comp') || clean.includes('pención comp') || clean.includes('full board') || clean.includes('fb') || clean.includes('fap')) {
+    return 'Pensión Completa'
+  }
+  if (clean.includes('desayuno') || clean.includes('buffet') || clean.includes('breakfast') || clean.includes('bb') || clean.includes('bed & breakfast')) {
+    return 'Desayuno Buffet'
+  }
+  return 'Solo Habitación'
 }
 
 function SearchableOperatorSelect({ 
@@ -479,12 +500,15 @@ interface QuoteState {
   status: 'draft' | 'sent' | 'follow_up' | 'reserved' | 'sold' | 'lost'
 }
 
-export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMode?: 'dashboard' | 'list' | 'calendar' | 'builder' }) {
-  const [viewMode, setViewMode] = useState<'dashboard' | 'builder' | 'list' | 'calendar'>(initialViewMode)
+export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMode?: 'dashboard' | 'list' | 'calendar' | 'builder' | 'trash' }) {
+  const [viewMode, setViewMode] = useState<'dashboard' | 'builder' | 'list' | 'calendar' | 'trash'>(initialViewMode)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'sent' | 'reserved' | 'sold' | 'follow_up' | 'lost'>('all')
   const [listDisplayMode, setListDisplayMode] = useState<'cards' | 'table' | 'grouped'>('cards')
   const [quoteToDelete, setQuoteToDelete] = useState<any | null>(null)
+  const [trashQuotes, setTrashQuotes] = useState<any[]>([])
+  const [quoteToRestore, setQuoteToRestore] = useState<any | null>(null)
+  const [quoteToPermanentDelete, setQuoteToPermanentDelete] = useState<any | null>(null)
 
   // Estado Cotizador Exprés IA (Smart Paste)
   const [showExpressQuoteModal, setShowExpressQuoteModal] = useState(false)
@@ -707,6 +731,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
   useEffect(() => {
     fetchOperators()
     fetchHistory()
+    fetchTrash()
     fetchAllPassengers()
   }, [])
 
@@ -740,17 +765,42 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     }
   }
 
-  const handleDeleteQuote = async (quoteId: string) => {
+  const fetchTrash = async () => {
     try {
-      await axios.delete(`/api/manual-quotes/${quoteId}`)
-      toast.success('Cotización eliminada exitosamente')
-      fetchHistory()
-      setQuoteToDelete(null)
-      if (quote.id === quoteId) {
-        resetQuote()
-      }
+      const res = await axios.get('/api/manual-quotes/trash')
+      setTrashQuotes(Array.isArray(res.data) ? res.data : [])
     } catch (e) {
-      toast.error('Error al eliminar la cotización')
+      console.error('Error loading trash quotes')
+      setTrashQuotes([])
+    }
+  }
+
+  const handleRestoreQuote = async (quoteId: string) => {
+    if (!quoteId) return
+    try {
+      await axios.post(`/api/manual-quotes/${quoteId}/restore`)
+      toast.success('Cotización restaurada exitosamente')
+      fetchHistory()
+      fetchTrash()
+    } catch (e: any) {
+      console.error('Error al restaurar cotización:', e)
+      toast.error(e.response?.data?.message || 'Error al restaurar la cotización')
+    } finally {
+      setQuoteToRestore(null)
+    }
+  }
+
+  const handlePermanentDeleteQuote = async (quoteId: string) => {
+    if (!quoteId) return
+    try {
+      await axios.delete(`/api/manual-quotes/${quoteId}/permanent`)
+      toast.success('Cotización eliminada definitivamente')
+      fetchTrash()
+    } catch (e: any) {
+      console.error('Error al eliminar permanentemente:', e)
+      toast.error(e.response?.data?.message || 'Error al eliminar definitivamente')
+    } finally {
+      setQuoteToPermanentDelete(null)
     }
   }
 
@@ -1015,7 +1065,9 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     if (item.type === 'hotel') return item.details.checkIn || ''
     if (item.type === 'train') return item.details.departureDate || ''
     if (item.type === 'transfer') return item.details.date || ''
-    return ''
+    if (item.type === 'service') return item.details.date || item.details.startDate || item.details.departureDate || ''
+    if (item.type === 'assistance') return item.details.startDate || item.details.date || ''
+    return item.details.date || item.details.startDate || item.details.checkIn || ''
   }
 
   const handleSortItemsByDate = () => {
@@ -1262,8 +1314,14 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 return undefined
               }
 
+              // Excursiones / Tours / Servicios
+              const excTitle = parsed.excursionName || parsed.title
+              if (excTitle) {
+                updatedDetails.serviceName = excTitle
+              }
+
               if (parsed.origin) updatedDetails.origin = parsed.origin
-              if (parsed.destination) updatedDetails.destination = parsed.destination
+              if (parsed.destination || parsed.city) updatedDetails.destination = parsed.destination || parsed.city
 
               const conf = parsed.confirmationNumber || parsed.bookingCode
               if (conf) {
@@ -1280,14 +1338,22 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 updatedDetails.arrivalTime = parsed.arrivalTime
               }
 
-              const dateVal = formatInputDate(parsed.departureDate || parsed.date || parsed.checkIn)
+              const dateVal = formatInputDate(parsed.departureDate || parsed.date || parsed.checkIn || parsed.startDate)
               if (dateVal) {
                 updatedDetails.date = dateVal
+                updatedDetails.startDate = dateVal
                 updatedDetails.departureDate = dateVal
                 updatedDetails.checkIn = dateVal
               }
               if (parsed.checkOut) {
                 updatedDetails.checkOut = formatInputDate(parsed.checkOut)
+              }
+
+              if (parsed.deadline) {
+                const deadDate = formatInputDate(parsed.deadline)
+                if (deadDate) {
+                  updatedDetails.cancellationDate = deadDate
+                }
               }
 
               if (parsed.trainOperator || parsed.providerName) {
@@ -1303,6 +1369,23 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               if (parsed.flightNumber) updatedDetails.flightNumber = parsed.flightNumber
               if (parsed.airline || parsed.providerName) updatedDetails.airline = parsed.airline || parsed.providerName
               if (parsed.hotelName) updatedDetails.hotelName = parsed.hotelName
+
+              if (it.type === 'hotel' || parsed.hotelName || parsed.roomType || parsed.board) {
+                const currentRoom = (updatedDetails.rooms?.[0] || {}) as any
+                const roomTypeVal = parsed.roomType || currentRoom.type || 'Doble Standard'
+                const boardVal = normalizeBoardBasis(parsed.board || currentRoom.board)
+                const paxVal = Number(parsed.paxCount) || currentRoom.paxCount || quote.paxCount || 2
+
+                updatedDetails.rooms = [
+                  {
+                    id: currentRoom.id || Date.now().toString(),
+                    type: roomTypeVal,
+                    board: boardVal,
+                    paxCount: paxVal,
+                    price: currentRoom.price || 0
+                  }
+                ]
+              }
 
               // Assistance & Insurance specific fields
               if (parsed.assistanceCompany || (serviceType === 'assistance' && parsed.providerName)) {
@@ -1344,16 +1427,26 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 updatedDetails.description = pParts.join(' - ')
               }
 
-              const notesParts = []
+              const notesParts: string[] = []
+              if (parsed.duration) notesParts.push(`Duración: ${parsed.duration}`)
+              if (parsed.language) notesParts.push(`Idioma: ${parsed.language}`)
+              if (parsed.inclusions) {
+                const incStr = Array.isArray(parsed.inclusions) ? parsed.inclusions.join(', ') : parsed.inclusions
+                notesParts.push(`Incluye: ${incStr}`)
+              }
+              if (parsed.exclusions) {
+                const excStr = Array.isArray(parsed.exclusions) ? parsed.exclusions.join(', ') : parsed.exclusions
+                notesParts.push(`No incluye: ${excStr}`)
+              }
               if (parsed.vehicleDetails) notesParts.push(parsed.vehicleDetails)
               if (Array.isArray(parsed.passengers) && parsed.passengers.length > 0) {
                 notesParts.push(`Pasajeros: ${parsed.passengers.join(', ')}`)
               }
-              if (parsed.description) notesParts.push(parsed.description)
+              if (parsed.description && !notesParts.includes(parsed.description)) notesParts.push(parsed.description)
 
               if (notesParts.length > 0) {
                 const combinedNotes = notesParts.join(' | ')
-                if (it.type === 'service' || it.type === 'assistance') {
+                if (it.type === 'service' || it.type === 'assistance' || it.type === 'transfer') {
                   updatedDetails.description = combinedNotes
                 }
               }
@@ -1374,8 +1467,14 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 newPrice = parsed.price
               }
 
+              let newTitle = it.title
+              if (excTitle) {
+                newTitle = excTitle
+              }
+
               return {
                 ...it,
+                title: newTitle,
                 details: updatedDetails,
                 economics: updatedEconomics,
                 price: newPrice
@@ -2047,9 +2146,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     const foundLine = lines.find(l => hotelKeywords.some(k => l.toLowerCase().includes(k)) && !l.includes('.png') && !l.includes('.jpg') && !l.includes('.pdf') && !l.includes('PNG'))
     if (foundLine) hotelName = foundLine.replace(/^(hotel|resort|alojamiento)[:\s]*/i, '')
 
-    if (text.toLowerCase().includes('all inclusive') || text.toLowerCase().includes('todo incluido')) board = 'All Inclusive'
-    else if (text.toLowerCase().includes('media pension') || text.toLowerCase().includes('half board')) board = 'Media Pensión'
-    else if (text.toLowerCase().includes('desayuno') || text.toLowerCase().includes('breakfast')) board = 'Desayuno Incluido'
+    board = normalizeBoardBasis(text)
 
     if (text.toLowerCase().includes('doble')) roomType = 'Doble Standard'
     else if (text.toLowerCase().includes('suite')) roomType = 'Suite'
@@ -2064,16 +2161,16 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
         if (confirmationNumber) newDetails.confirmationNumber = confirmationNumber
         if (checkIn) newDetails.checkIn = formatToInputDate(checkIn) || checkIn
         if (checkOut) newDetails.checkOut = formatToInputDate(checkOut) || checkOut
-        if (roomType || board) {
-          newDetails.rooms = [
-            {
-              id: Date.now().toString(),
-              type: roomType || 'Standard',
-              board: board || 'Desayuno Incluido',
-              paxCount: 2
-            }
-          ]
-        }
+        
+        const currentRoom = (newDetails.rooms?.[0] || {}) as any
+        newDetails.rooms = [
+          {
+            id: currentRoom.id || Date.now().toString(),
+            type: roomType || currentRoom.type || 'Standard',
+            board: board || currentRoom.board || 'Solo Habitación',
+            paxCount: currentRoom.paxCount || 2
+          }
+        ]
         return { ...it, details: newDetails }
       })
     }))
@@ -2116,6 +2213,22 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             if (rawCheckIn) newDetails.checkIn = formatToInputDate(rawCheckIn) || rawCheckIn
             if (rawCheckOut) newDetails.checkOut = formatToInputDate(rawCheckOut) || rawCheckOut
             if (rawCancel) newDetails.cancellationDate = formatToInputDate(rawCancel) || rawCancel
+
+            if (data.roomType || data.board || data.paxCount || newDetails.rooms) {
+              const currentRoom = (newDetails.rooms?.[0] || {}) as any
+              const rType = data.roomType || currentRoom.type || 'Doble Standard'
+              const rBoard = normalizeBoardBasis(data.board || currentRoom.board)
+              const rPax = Number(data.paxCount) || currentRoom.paxCount || quote.paxCount || 2
+              newDetails.rooms = [
+                {
+                  id: currentRoom.id || Date.now().toString(),
+                  type: rType,
+                  board: rBoard,
+                  paxCount: rPax,
+                  price: currentRoom.price || 0
+                }
+              ]
+            }
 
             // Auto-completar Precio de Venta, Costo Neto y Comisión desde la IA
             if (data.price && Number(data.price) > 0) {
@@ -2230,7 +2343,29 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     toast.success(`Estado actualizado a ${newStatus.toUpperCase()}`)
   }
 
-  const resetQuote = () => {
+  const handleDeleteQuote = async (quoteId: string) => {
+    if (!quoteId) return
+    try {
+      await axios.delete(`/api/manual-quotes/${quoteId}`)
+      toast.success('Cotización movida a la Papelera de Reciclaje')
+      setHistoryQuotes(prev => prev.filter(q => q.id !== quoteId))
+      fetchTrash()
+      if (quote.id === quoteId) {
+        resetQuote(true)
+        if (viewMode === 'builder') {
+          setViewMode('list')
+        }
+      }
+    } catch (e: any) {
+      console.error('Error al eliminar cotización:', e)
+      toast.error(e.response?.data?.message || 'Error al eliminar la cotización')
+    } finally {
+      setQuoteToDelete(null)
+    }
+  }
+
+  const resetQuote = (keepCurrentView: boolean = false) => {
+    const shouldKeepView = typeof keepCurrentView === 'boolean' ? keepCurrentView : false
     localStorage.removeItem('manual_quote_draft')
     setQuote({
       passengerId: '',
@@ -2252,7 +2387,9 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
     })
     setPassengerSearch('')
     setAutoSaveStatus('idle')
-    setViewMode('builder')
+    if (!shouldKeepView) {
+      setViewMode('builder')
+    }
   }
 
   const handleLoadQuote = (q: any) => {
@@ -2342,6 +2479,17 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
             }`}
           >
             <Plus className="w-4 h-4 text-orange-500" /> {quote.id ? 'Editando Cotización' : 'Nueva Cotización'}
+          </button>
+
+          <button
+            onClick={() => { fetchTrash(); setViewMode('trash'); }}
+            className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              viewMode === 'trash'
+                ? 'bg-red-50 text-red-600 shadow-2xs font-black border border-red-200'
+                : 'text-slate-500 hover:text-red-600 hover:bg-red-50/50 font-bold'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-red-500" /> Papelera ({trashQuotes.length})
           </button>
         </div>
 
@@ -2565,7 +2713,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               <p className="text-xs text-slate-500 font-medium mt-0.5">Control centralizado de itinerarios, reservas y seguimiento comercial</p>
             </div>
             <button
-              onClick={resetQuote}
+              onClick={() => resetQuote()}
               className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
             >
               <Plus className="w-4 h-4" /> Crear Nueva Cotización
@@ -3182,6 +3330,99 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
         </div>
       )}
 
+      {/* VISTA 4: PAPELERA DE RECICLAJE */}
+      {viewMode === 'trash' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4 flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Papelera de Reciclaje</h2>
+                <p className="text-xs text-slate-500 font-medium">Cotizaciones eliminadas temporalmente. Podés restaurarlas a su estado activo o eliminarlas definitivamente.</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchTrash}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <RefreshCw className="w-4 h-4" /> Actualizar Papelera
+            </button>
+          </div>
+
+          {trashQuotes.length === 0 ? (
+            <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50 space-y-3">
+              <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 mx-auto">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-black text-slate-700 uppercase">La papelera está vacía</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">No tenés cotizaciones eliminadas en este momento. Las cotizaciones que borres aparecerán en esta sección para que puedas recuperarlas.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {trashQuotes.map((q) => {
+                let itemsList = q.items || []
+                if (typeof itemsList === 'string') {
+                  try { itemsList = JSON.parse(itemsList) } catch { itemsList = [] }
+                }
+                let totalSale = 0
+                itemsList.forEach((it: any) => {
+                  totalSale += calculateItemEconomics(it).totalSale
+                })
+
+                const clientName = q.passenger ? `${q.passenger.surname}, ${q.passenger.name}` : (q.clientName || 'Sin Pasajero')
+                const deletedDateStr = q.deletedAt ? new Date(q.deletedAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+
+                return (
+                  <div key={q.id} className="p-5 bg-white rounded-2xl border border-red-200/80 shadow-2xs space-y-4 flex flex-col justify-between hover:border-red-300 transition-all">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight truncate" title={q.title || 'Cotización sin título'}>
+                            {q.title || 'Cotización sin título'}
+                          </h4>
+                          <p className="text-xs font-semibold text-slate-600 truncate mt-0.5" title={clientName}>
+                            Cliente: {clientName}
+                          </p>
+                        </div>
+                        <span className="text-[9.5px] font-black uppercase px-2 py-0.5 bg-red-100 text-red-700 rounded-lg border border-red-200 shrink-0">
+                          En Papelera
+                        </span>
+                      </div>
+
+                      <div className="text-xs space-y-1 pt-2 border-t border-slate-100">
+                        <p className="text-slate-500 font-medium">Destino: <strong className="text-slate-800">{q.destination || 'Por definir'}</strong></p>
+                        <p className="text-slate-500 font-medium">Monto Cotizado: <strong className="text-slate-900 font-black">{q.currency || 'USD'} ${fmtVal(totalSale)}</strong></p>
+                        {deletedDateStr && (
+                          <p className="text-[11px] text-red-600 font-bold pt-1">Eliminada: {deletedDateStr}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        onClick={() => setQuoteToRestore(q)}
+                        className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-2xs"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Restaurar
+                      </button>
+                      <button
+                        onClick={() => setQuoteToPermanentDelete(q)}
+                        className="py-2 px-3 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs uppercase tracking-wider rounded-xl border border-red-200 cursor-pointer transition-all flex items-center justify-center gap-1"
+                        title="Eliminar permanentemente de la base de datos"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* VISTA 3: FORMULARIO COTIZADOR MAESTRO */}
       {viewMode === 'builder' && (
         <div className="space-y-8">
@@ -3555,8 +3796,9 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                   {item.type === 'flight' ? (item.details.airline || 'Servicio Aéreo') :
                                    item.type === 'hotel' ? (item.details.hotelName || 'Alojamiento') :
                                    item.type === 'train' ? (item.details.trainOperator ? `Tren ${item.details.trainOperator}` : 'Tren') :
-                                   item.type === 'transfer' ? 'Traslado Privado' :
-                                   item.type === 'assistance' ? 'Asistencia Médica' : 'Servicio Adicional'}
+                                   item.type === 'transfer' ? (item.details.origin && item.details.destination ? `Traslado ${item.details.origin} ➔ ${item.details.destination}` : 'Traslado Privado') :
+                                   item.type === 'assistance' ? (item.details.assistanceCompany ? `Asistencia Médica (${item.details.assistanceCompany})` : 'Asistencia Médica') :
+                                   (item.title || item.details.serviceName || (item.details.description ? item.details.description.split('|')[0].trim() : 'Excursión / Servicio'))}
                                 </h4>
                                 {itemDate && (
                                   <span className="px-2 py-0.5 bg-orange-50 border border-orange-200 text-orange-700 font-mono font-black text-[10px] rounded-md flex items-center gap-1 shrink-0">
@@ -4522,8 +4764,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                               </div>
                             )}
 
-                            {/* ASISTENCIA MÉDICA Y SERVICIOS ADICIONALES FORMULARIO COMPLETO */}
-                            {(item.type === 'assistance' || item.type === 'service') && (
+                            {/* ASISTENCIA MÉDICA FORMULARIO COMPLETO */}
+                            {item.type === 'assistance' && (
                               <div className="space-y-5">
                                 {/* IA OCR SCANNER BANNER PARA ASISTENCIA MÉDICA */}
                                 <div 
@@ -4675,6 +4917,158 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                                         <span>{calculateNights(item.details.startDate || item.details.date, item.details.endDate || item.details.checkOut)} Días</span>
                                         <Calendar className="w-4 h-4 text-emerald-500" />
                                       </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* EXCURSIÓN Y SERVICIOS ADICIONALES FORMULARIO COMPLETO */}
+                            {item.type === 'service' && (
+                              <div className="space-y-5">
+                                {/* IA OCR SCANNER BANNER PARA EXCURSIONES */}
+                                <div 
+                                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(item.id); }}
+                                  onDragLeave={() => setIsDraggingOver(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setIsDraggingOver(null);
+                                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                      handleParseServiceVoucher(item.id, e.dataTransfer.files[0], 'service');
+                                    }
+                                  }}
+                                  className={`p-4 rounded-2xl text-white shadow-md flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3.5 overflow-hidden transition-all ${
+                                    isDraggingOver === item.id 
+                                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 ring-4 ring-amber-300 scale-[1.01]' 
+                                      : 'bg-gradient-to-r from-amber-600 to-orange-600'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-xs shrink-0">
+                                      <Sparkles className="w-4.5 h-4.5 text-white" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                                        <span className="text-xs font-black uppercase tracking-wider text-white">
+                                          Lector Automático de Excursiones / Servicios (OCR)
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-md font-mono font-bold shrink-0">PEGA CON CTRL+V</span>
+                                      </div>
+                                      <p className="text-[11px] text-amber-100 font-medium leading-tight truncate">
+                                        Pegá con <strong>Ctrl + V</strong>, arrastrá la captura o subí el voucher (ebooking, Civitatis, Viator, etc.) para auto-completar.
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0 w-full xl:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePasteVoucherFromClipboard(item.id, 'service')}
+                                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0"
+                                      title="Pegar captura de voucher desde el portapapeles (Ctrl + V)"
+                                    >
+                                      <Clipboard className="w-4 h-4 text-amber-400" /> {isParsingService === item.id ? 'Analizando...' : 'Pegar Captura (Ctrl+V)'}
+                                    </button>
+
+                                    <label className="px-3.5 py-2 bg-white text-amber-900 hover:bg-amber-50 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-xs transition-all flex items-center gap-1.5 shrink-0">
+                                      <Upload className="w-4 h-4" /> {isParsingService === item.id ? 'Analizando...' : 'Subir Archivo'}
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                          if (e.target.files && e.target.files[0]) {
+                                            handleParseServiceVoucher(item.id, e.target.files[0], 'service')
+                                          }
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+
+                                <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
+                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <span className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
+                                      <Compass className="w-4.5 h-4.5 text-amber-600" /> Detalles de la Excursión / Tour
+                                    </span>
+                                    {item.details.cancellationDate && (
+                                      <span className="px-3 py-1 bg-amber-50 border border-amber-200 text-amber-700 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs">
+                                        <Calendar className="w-3.5 h-3.5 text-amber-500" /> Vence / Límite Pago: {formatToInputDate(item.details.cancellationDate)}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                                    <div className="sm:col-span-2">
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Nombre de Excursión / Servicio</label>
+                                      <input
+                                        type="text"
+                                        value={item.title || item.details.serviceName || ''}
+                                        onChange={e => {
+                                          const val = e.target.value
+                                          updateItemDetails(item.id, 'serviceName', val)
+                                          setQuote(prev => ({
+                                            ...prev,
+                                            items: prev.items.map(it => it.id === item.id ? { ...it, title: val } : it)
+                                          }))
+                                        }}
+                                        placeholder="Ej: Excursión a Nerja, Frigiliana y El Acebuchal"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Nº Localizador / Confirmación</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.confirmationNumber || ''}
+                                        onChange={e => updateItemDetails(item.id, 'confirmationNumber', e.target.value)}
+                                        placeholder="Ej: 3156169"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Fecha del Servicio</label>
+                                      <input
+                                        type="date"
+                                        value={formatToInputDate(item.details.date || item.details.startDate)}
+                                        onChange={e => {
+                                          updateItemDetails(item.id, 'date', e.target.value)
+                                          updateItemDetails(item.id, 'startDate', e.target.value)
+                                        }}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 pt-4 border-t border-slate-100 items-end">
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Hora de Salida / Horario</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.time || ''}
+                                        onChange={e => updateItemDetails(item.id, 'time', e.target.value)}
+                                        placeholder="Ej: 10:00hs"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Fecha Vencimiento / Límite Pago</label>
+                                      <input
+                                        type="date"
+                                        value={formatToInputDate(item.details.cancellationDate)}
+                                        onChange={e => updateItemDetails(item.id, 'cancellationDate', e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                      <label className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block h-7 flex items-end mb-1.5 truncate">Incluye / No Incluye / Notas</label>
+                                      <input
+                                        type="text"
+                                        value={item.details.description || ''}
+                                        onChange={e => updateItemDetails(item.id, 'description', e.target.value)}
+                                        placeholder="Ej: Duración: 7 hs | Incluye: Transporte en minibús, Guía | No incluye: Comidas"
+                                        className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-orange-500 focus:bg-white transition-all h-[42px]"
+                                      />
                                     </div>
                                   </div>
                                 </div>
@@ -5623,8 +6017,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
       {/* MODAL CONFIGURACIÓN / EMISIÓN DE FACTURA ARCA */}
       {showArcaInvoiceModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white w-full max-w-5xl h-[88vh] max-h-[88vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             {/* HEADER STICKY */}
             <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0">
               <div className="flex items-center gap-3">
@@ -5932,8 +6326,8 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
       {/* MODAL VOUCHER / IMPRESIÓN COMPROBANTE OFICIAL ARCA */}
       {selectedArcaInvoiceForView && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white w-full max-w-5xl h-[88vh] max-h-[88vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             {/* HEADER STICKY */}
             <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0 z-10">
               <div>
@@ -6155,13 +6549,13 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
         </div>
       )}
 
-      {/* MODAL CONFIRMACIÓN ELIMINAR COTIZACIÓN COMPLETA */}
+      {/* MODAL CONFIRMACIÓN ENVIAR A PAPELERA */}
       {quoteToDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
-                <Trash2 className="w-5 h-5 text-red-600" /> Eliminar Cotización
+                <Trash2 className="w-5 h-5 text-red-600" /> Mover a Papelera
               </h3>
               <button onClick={() => setQuoteToDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="w-5 h-5" />
@@ -6170,7 +6564,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
             <div className="space-y-3">
               <p className="text-xs text-slate-600 font-medium">
-                ¿Estás seguro de que deseas eliminar esta cotización? Esta acción la borrará permanentemente de la base de datos.
+                ¿Deseás mover esta cotización a la Papelera de Reciclaje? Podrás verla y restaurarla en cualquier momento desde la pestaña Papelera.
               </p>
 
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
@@ -6199,6 +6593,102 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
                 onClick={() => handleDeleteQuote(quoteToDelete.id)}
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
               >
+                <Trash2 className="w-4 h-4" /> Mover a Papelera
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN RESTAURAR COTIZACIÓN */}
+      {quoteToRestore && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-emerald-600" /> Restaurar Cotización
+              </h3>
+              <button onClick={() => setQuoteToRestore(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 font-medium">
+                ¿Deseás restaurar esta cotización? Volverá a estar activa en el Listado Maestro y en el Dashboard.
+              </p>
+
+              <div className="p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {quoteToRestore.title || 'Cotización de Viaje'}
+                </p>
+                <p className="text-xs text-slate-600 font-semibold">
+                  Pasajero: {quoteToRestore.passenger ? `${quoteToRestore.passenger.surname}, ${quoteToRestore.passenger.name}` : (quoteToRestore.clientName || 'Sin Pasajero')}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setQuoteToRestore(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRestoreQuote(quoteToRestore.id)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" /> Restaurar Cotización
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN BORRADO PERMANENTE */}
+      {quoteToPermanentDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2 text-red-600">
+                <AlertTriangle className="w-5 h-5 text-red-600" /> Eliminar Definitivamente
+              </h3>
+              <button onClick={() => setQuoteToPermanentDelete(null)} className="p-2 text-slate-400 hover:text-slate-700 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-red-600 font-bold">
+                ⚠️ ¡Atención! Esta acción eliminará permanentemente la cotización de la base de datos y no se podrá recuperar.
+              </p>
+
+              <div className="p-3.5 bg-red-50 rounded-2xl border border-red-200 space-y-1">
+                <p className="text-xs font-black text-slate-900 uppercase">
+                  {quoteToPermanentDelete.title || 'Cotización de Viaje'}
+                </p>
+                <p className="text-xs text-slate-600 font-semibold">
+                  Pasajero: {quoteToPermanentDelete.passenger ? `${quoteToPermanentDelete.passenger.surname}, ${quoteToPermanentDelete.passenger.name}` : (quoteToPermanentDelete.clientName || 'Sin Pasajero')}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setQuoteToPermanentDelete(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePermanentDeleteQuote(quoteToPermanentDelete.id)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
                 <Trash2 className="w-4 h-4" /> Eliminar Definitivamente
               </button>
             </div>
@@ -6209,7 +6699,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
       {/* MODAL EXPORTACIÓN A PDF / VISTA PREVIA IMPRIMIBLE COMERCIAL */}
       {showExportModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
-          <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-5xl h-[88vh] max-h-[88vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
             
             {/* HEADER STICKY DE EXPORTACIÓN */}
             <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 z-10 shadow-2xs">
@@ -6554,9 +7044,9 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
 
       {/* MODAL PARA CARGAR FACTURA DE COMPRA DE MAYORISTA (Let's Travel, Toselli, etc.) */}
       {showAddPurchaseInvoiceModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-xl rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-200 my-8">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white w-full max-w-5xl h-[88vh] max-h-[88vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 sm:p-6 border-b border-slate-100 bg-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-indigo-600" /> Cargar Factura de Mayorista
@@ -6568,7 +7058,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mayorista / Proveedor</label>
@@ -6654,7 +7144,7 @@ export function ManualQuoteBuilder({ initialViewMode = 'list' }: { initialViewMo
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+            <div className="p-4 sm:p-5 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowAddPurchaseInvoiceModal(false)}

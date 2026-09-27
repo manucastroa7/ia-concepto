@@ -230,10 +230,10 @@ export const ExpressQuoteModal: React.FC<ExpressQuoteModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700/60 rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-3xl shadow-2xl w-full max-w-5xl h-[88vh] max-h-[88vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center shadow-inner">
               <Sparkles size={22} className="animate-pulse" />

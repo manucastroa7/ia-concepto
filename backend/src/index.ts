@@ -74,6 +74,9 @@ app.post("/api/settings", SettingsController.updateSettings);
 app.post("/api/settings/logo", upload.single("file"), SettingsController.uploadLogo);
 
 // --- Module 5: Manual Quotes & Sales ---
+app.get("/api/manual-quotes/trash", ManualQuoteController.listTrash);
+app.post("/api/manual-quotes/:id/restore", ManualQuoteController.restore);
+app.delete("/api/manual-quotes/:id/permanent", ManualQuoteController.removePermanent);
 app.get("/api/manual-quotes", ManualQuoteController.list);
 app.get("/api/manual-quotes/:id", ManualQuoteController.get);
 app.post("/api/manual-quotes", ManualQuoteController.create);
@@ -85,6 +88,9 @@ app.post("/api/manual-quotes/parse-flight-ticket", upload.single("file"), Manual
 app.post("/api/manual-quotes/parse-service-voucher", upload.single("file"), ManualQuoteController.parseServiceVoucher);
 app.post("/api/manual-quotes/parse-payment-receipt", upload.single("file"), ManualQuoteController.parsePaymentReceipt);
 
+app.get("/api/group-quotes/trash", GroupQuoteController.listTrash);
+app.post("/api/group-quotes/:id/restore", GroupQuoteController.restore);
+app.delete("/api/group-quotes/:id/permanent", GroupQuoteController.removePermanent);
 app.get("/api/group-quotes", GroupQuoteController.list);
 app.post("/api/group-quotes", GroupQuoteController.create);
 app.get("/api/group-quotes/:id", GroupQuoteController.get);

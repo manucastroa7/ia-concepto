@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne } from "typeorm";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne } from "typeorm";
 import { Passenger } from "./Passenger";
 
 @Entity()
@@ -83,4 +83,7 @@ export class ManualQuote {
 
     @UpdateDateColumn()
     updatedAt!: Date;
+
+    @DeleteDateColumn({ nullable: true })
+    deletedAt?: Date;
 }

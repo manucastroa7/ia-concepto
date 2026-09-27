@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../data-source";
 import { ManualQuote } from "../entities/ManualQuote";
+import { Not, IsNull } from "typeorm";
 
 export class ManualQuoteController {
     static async create(req: Request, res: Response) {
@@ -245,14 +246,70 @@ export class ManualQuoteController {
     static async remove(req: Request, res: Response) {
         try {
             const { id } = req.params;
+            if (!id) return res.status(400).json({ message: "ID requerido" });
+
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+            if (!isUuid) {
+                return res.json({ message: "Cotización eliminada exitosamente" });
+            }
+
+            // Desvincular ventas en PostgreSQL antes de mover a papelera
+            try {
+                await AppDataSource.query('UPDATE "sale" SET "quoteId" = NULL WHERE "quoteId" = $1', [id]);
+            } catch (err) {
+                console.warn("No sale table or column update needed:", err);
+            }
+
             const repo = AppDataSource.getRepository(ManualQuote);
-            const quote = await repo.findOneBy({ id });
-            if (!quote) return res.status(404).json({ message: "Cotización no encontrada" });
-            await repo.remove(quote);
-            return res.json({ message: "Cotización eliminada exitosamente" });
-        } catch (error) {
+            await repo.softDelete(id);
+            return res.json({ message: "Cotización movida a la papelera exitosamente" });
+        } catch (error: any) {
             console.error("Error deleting quote:", error);
-            return res.status(500).json({ message: "Error al eliminar la cotización" });
+            return res.status(500).json({ message: error?.message || "Error al eliminar la cotización" });
+        }
+    }
+
+    static async listTrash(req: Request, res: Response) {
+        try {
+            const repo = AppDataSource.getRepository(ManualQuote);
+            const quotes = await repo.find({
+                withDeleted: true,
+                where: { deletedAt: Not(IsNull()) },
+                order: { deletedAt: "DESC" },
+                relations: ["passenger"]
+            });
+            return res.json(quotes);
+        } catch (error: any) {
+            console.error("Error listing trash quotes:", error);
+            return res.status(500).json({ message: "Error al listar la papelera de cotizaciones" });
+        }
+    }
+
+    static async restore(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            if (!id) return res.status(400).json({ message: "ID requerido" });
+
+            const repo = AppDataSource.getRepository(ManualQuote);
+            await repo.restore(id);
+            return res.json({ message: "Cotización restaurada exitosamente" });
+        } catch (error: any) {
+            console.error("Error restoring quote:", error);
+            return res.status(500).json({ message: error?.message || "Error al restaurar la cotización" });
+        }
+    }
+
+    static async removePermanent(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            if (!id) return res.status(400).json({ message: "ID requerido" });
+
+            const repo = AppDataSource.getRepository(ManualQuote);
+            await repo.delete(id);
+            return res.json({ message: "Cotización eliminada permanentemente" });
+        } catch (error: any) {
+            console.error("Error permanently deleting quote:", error);
+            return res.status(500).json({ message: error?.message || "Error al eliminar la cotización de forma permanente" });
         }
     }
 }
