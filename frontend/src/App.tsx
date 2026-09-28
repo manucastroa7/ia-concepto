@@ -89,9 +89,21 @@ const MENU_GROUPS: NavGroup[] = [
 ]
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('tariffs')
+  const [tab, setTab] = useState<Tab>(() => {
+    const hash = window.location.hash.replace('#', '') as Tab
+    const validTabs: Tab[] = [
+      'tariffs', 'dashboard-comercial', 'manual-quote', 'group-quotes', 
+      'operators', 'passengers', 'treasury', 'web-packages', 
+      'flyer-extractor', 'flyer-history', 'settings'
+    ]
+    if (hash && validTabs.includes(hash)) return hash
+    const saved = localStorage.getItem('concepto_active_tab') as Tab
+    if (saved && validTabs.includes(saved)) return saved
+    return 'dashboard-comercial'
+  })
+
   const [branding, setBranding] = useState<any>(null)
-  
+
   // Track open state of category accordions
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     'Comercial & Cotizaciones': true,
@@ -100,6 +112,11 @@ export function App() {
     'Marketing & Difusión': true,
     'Configuración': true,
   })
+  
+  useEffect(() => {
+    localStorage.setItem('concepto_active_tab', tab)
+    window.location.hash = tab
+  }, [tab])
 
   useEffect(() => {
     fetchBranding()
