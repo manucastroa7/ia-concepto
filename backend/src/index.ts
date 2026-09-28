@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -116,6 +118,7 @@ app.get("/api/treasury/transactions", TreasuryController.listTransactions);
 app.post("/api/treasury/transactions", TreasuryController.createTransaction);
 app.patch("/api/treasury/transactions/:id", TreasuryController.updateTransaction);
 app.delete("/api/treasury/transactions/:id", TreasuryController.removeTransaction);
+
 // --- Web Packages (Vidriera CRM) ---
 app.get("/api/web-packages", WebPackageController.list);
 app.post("/api/web-packages", WebPackageController.create);
@@ -140,6 +143,29 @@ app.post("/api/web-packages/:id/image", upload.single("file"), WebPackageControl
 // --- Public Endpoints para concepto-web ---
 app.get("/api/public/packages", PublicPackageController.getPublicPackages);
 app.get("/api/public/settings", SettingsController.getSettings);
+
+// --- Endpoint de Migración Automática para Railway ---
+app.all("/api/admin/import-dump", async (req, res) => {
+  try {
+    const dumpPath = path.join(__dirname, "../database_dump.sql");
+    const altDumpPath = path.join(__dirname, "./database_dump.sql");
+    const rootDumpPath = path.join(process.cwd(), "database_dump.sql");
+    const backendDumpPath = path.join(process.cwd(), "backend/database_dump.sql");
+
+    let finalPath = [dumpPath, altDumpPath, rootDumpPath, backendDumpPath].find((p) => fs.existsSync(p));
+
+    if (!finalPath) {
+      return res.status(404).json({ error: "database_dump.sql not found on server", checkedPaths: [dumpPath, altDumpPath, rootDumpPath, backendDumpPath] });
+    }
+
+    const sql = fs.readFileSync(finalPath, "utf8");
+    await AppDataSource.query(sql);
+    res.json({ success: true, message: "¡Base de datos migrada exitosamente en Railway desde database_dump.sql!" });
+  } catch (err: any) {
+    console.error("Error importing dump:", err);
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", agency: process.env.AGENCY_NAME || "Concepto Evt" });
