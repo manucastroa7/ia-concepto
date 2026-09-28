@@ -14,8 +14,6 @@ import { PassengerManager } from './components/PassengerManager'
 import { WebPackageManager } from './components/WebPackageManager'
 import { GroupQuoteManager } from './components/GroupQuoteManager'
 import { TreasuryManager } from './components/TreasuryManager'
-import { FlyerExtractor } from './components/FlyerExtractor'
-import { FlyerHistory } from './components/FlyerHistory'
 
 export type Tab = 
   | 'tariffs' 
@@ -26,8 +24,6 @@ export type Tab =
   | 'passengers' 
   | 'treasury' 
   | 'web-packages' 
-  | 'flyer-extractor' 
-  | 'flyer-history' 
   | 'settings'
 
 interface SubItem {
@@ -75,8 +71,6 @@ const MENU_GROUPS: NavGroup[] = [
     items: [
       { id: 'tariffs', label: 'Buscador de Ofertas', description: 'Tarifas y circuitos', icon: Search },
       { id: 'web-packages', label: 'Vidriera Web (CRM)', description: 'Publicación en el sitio', icon: Globe },
-      { id: 'flyer-extractor', label: 'Extractor de Flyers', description: 'Extraer PDF/Imagen con IA', icon: Image, badge: 'IA' },
-      { id: 'flyer-history', label: 'Historial de Flyers', description: 'Biblioteca de promociones', icon: History },
     ]
   },
   {
@@ -94,7 +88,7 @@ export function App() {
     const validTabs: Tab[] = [
       'tariffs', 'dashboard-comercial', 'manual-quote', 'group-quotes', 
       'operators', 'passengers', 'treasury', 'web-packages', 
-      'flyer-extractor', 'flyer-history', 'settings'
+      'settings'
     ]
     if (hash && validTabs.includes(hash)) return hash
     const saved = localStorage.getItem('concepto_active_tab') as Tab
@@ -288,8 +282,6 @@ export function App() {
             {tab === 'operators' && <OperatorManager />}
             {tab === 'passengers' && <PassengerManager />}
             {tab === 'web-packages' && <WebPackageManager />}
-            {tab === 'flyer-extractor' && <FlyerExtractor />}
-            {tab === 'flyer-history' && <FlyerHistory />}
             {tab === 'settings' && <AgencySettings />}
           </div>
         </main>
