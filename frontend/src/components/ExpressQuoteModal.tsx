@@ -37,7 +37,7 @@ export const ExpressQuoteModal: React.FC<ExpressQuoteModalProps> = ({
   isOpen,
   onClose,
   onImportQuote,
-  apiUrl = "http://localhost:3001",
+  apiUrl = import.meta.env.VITE_API_URL || '',
   pastedImageFile
 }) => {
   const [images, setImages] = useState<ImageFile[]>([]);
