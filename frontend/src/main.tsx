@@ -5,7 +5,11 @@ import App from './App'
 import './index.css'
 
 if (import.meta.env.VITE_API_URL) {
-  axios.defaults.baseURL = import.meta.env.VITE_API_URL
+  let url = import.meta.env.VITE_API_URL.trim()
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`
+  }
+  axios.defaults.baseURL = url
 }
 
 interface Props {
